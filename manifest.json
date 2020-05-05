@@ -1,0 +1,10 @@
+{
+    "domain": "plcbus",
+    "name": "Plcbus integration",
+    "documentation": "https://github.com/tikismoke/home-assistant-plcbus",
+    "dependencies": [],
+    "codeowners": ["@Tikismoke"],
+    "requirements": [
+      "pyserial==3.4"
+    ]
+  }
