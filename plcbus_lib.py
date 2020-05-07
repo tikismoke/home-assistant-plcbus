@@ -44,6 +44,7 @@ Implements
 """
 
 from .PLCBusSerialHandler import serialHandler
+from binascii import hexlify
 
 
 class PLCBUSException(Exception):
@@ -196,11 +197,14 @@ class PLCBUSAPI:
                     self._convert_device_to_hex(item), self._cmdplcbus[cmd],
                     self._convert_data(data1), self._convert_data(data2))
             try:
-                message = plcbus_frame.decode('HEX')
+                #message = plcbus_frame.decode('HEX')
+                print("message before hexlify",plcbus_frame)
+                message = plcbus_frame
             except TypeError:
                 print("PLCBUS Frame generation error, does not result in a HEX string ", plcbus_frame)
             else:
                 self._ser_handler.add_to_send_queue(plcbus_frame)
+                
 
     def get_all_on_id(self, usercode, housecode):
         '''
@@ -211,7 +215,7 @@ class PLCBUSAPI:
         '''
         onlist = []
         self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
-        response = self._ser_handler.get_from_answer_queue()
+        #response = self._ser_handler.get_from_answer_queue()
         if(response):
             print ("Hoora response received", response)
             data = int(response[10:14], 16)
@@ -220,7 +224,7 @@ class PLCBUSAPI:
                     onlist.append(housecode + str(self._unitcodes[i]))
         print ("on :", onlist)
         return onlist
-
+    
     def stop(self):
         """ Ask thread to stop
         """
