@@ -54,6 +54,7 @@ class serialHandler(threading.Thread):
     """
 
     def __init__(self, serial_port_no, command_cb, message_cb):
+        #print("__init__")
         """ Initialize threaded PLCBUS manager
         Will handle communication to and from PLCBus 
         @param serial_port_no : Number or path of the serial port 
@@ -76,97 +77,15 @@ class serialHandler(threading.Thread):
         self._send_queue = queue.Queue()
         self._cb = command_cb
         self._msg_cb = message_cb
+        #self._waited_ack = ""
         #self._reader = self.__Reader(self.__myser, self._want_lock, self._mutex, self._ack, message_cb)
         #self._reader.start()
         #self._writer = self.__Writer(self.__myser, self._want_lock, self._mutex, self._ack, command_cb, self._reader)
         #self._writer.start()
 
-    def _send(self, plcbus_frame):
-        #Resend if proper ACK not received
-        #check for ack pulse
-        explicit_frame = self.explicit_message(plcbus_frame)
-        if (int(plcbus_frame[8:10], 16) >> 5) & 1: #ACK pulse bit set to 1
-            #The ACK message take only 10ms + 10ms to bring it back to the computer.
-            #Anyway, it seems that the mean time before reading the ack is about 
-            #0.6s . Because there is another sleep in the loop, this sleep is only 0.3s
-         #   time.sleep(0.3)
-            ACK_received = 0
-            # like a timer, does not wait for more than 2seconds for example
-            time1 = time.time()
-            while not self._stop.isSet():
-                #The ack message is sent immediately after the message has been received 
-                #and transmission time is 20mS (10ms for message propagation to adapter,
-                #and 10ms between adapter and computer
-                #We sleep 20ms between each check
-                self.needs_ack_for(plcbus_frame)
-                self._basic_write(plcbus_frame)
-                time.sleep(0.6)
-                print("time before wait : %s" % time.time())
-                for i in range(3):
-                    self.receive()
-                    if self._ack.isSet():
-                        print("got ack in first read")
-                        break
-                print("time after wait : %s" % time.time())
-                if self._ack.isSet():
-                    print(plcbus_frame + " : Ack set")
-                    ACK_received = 1
-                    self._ack.clear()
-                    self._cb(self.explicit_message(plcbus_frame))
-                    break
-
-                if (ACK_received == 1):
-                    break
-                elif(time1 + 3.1 < time.time()):
-                    print("WARN : Message %s sent, but ack never received" % plcbus_frame)
-                    break #2s
-        elif explicit_frame["d_command"] not in ['GET_ALL_ID_PULSE', 'GET_ALL_ON_ID_PULSE']:
-            #No ACK asked, we consider that the message has been correctly sent
-            self._basic_write(plcbus_frame)
-            self._cb(explicit_frame)
-        else:
-            self._basic_write(plcbus_frame)
-
-    def _basic_write(self, frame):
-        """Write a frame on serial port
-        This method should only be called as mutex.lock() parameter
-        @param frame : The frame to write 
-        """
-        print("SEND : %s" % frame)
-        self.__myser.write(frame.decode("HEX"))
-
-    def add_to_send_queue(self, trame):
-        print("add_to_send_queue : %s" % trame)
-        self._send_queue.put(trame)
-
-    def needs_ack_for(self, frame):
-        """ Called by the Writer to let Reader knows that a ACK is waited
-        it will set the internal _waited_ack until the ack is received 
-        @param frame : the plcbus frame
-        """
-        self._waited_ack = frame
-
-    def _is_ack_for_message(self, m1, m2):
-        #check the ACK bit
-        #print("ACK check " + m1.encode('HEX') +" " + m2)
-        #check house code and user code in hexa string format like '45E0'
-        if(m1[4:8].upper() == m2[4:8].upper()) and (m1[8:10].upper() == m2[8:10].upper()): #Compare user code + home unit
-            #print("housecode and usercode OK")
-            return (int(m1[14:16], 16) & 0x20) #test only one bit
-        return False
-
-    def _is_answer(self, message):
-        # if command is in answer required list (not ACK required, it's
-        # different)
-        # if R_ID_SW bit set
-        # maybe pass this list to the _init_ of this handler to make it
-        # compatible with other protocols
-        if((int(message[14:15], 16) >> 2 & 1) and message[8:10].upper() in
-                ["1C","1D"]):
-            return True
-        return False
 
     def explicit_message(self, message):
+        #print("explicit_message")
         """ Parse a frame 
         """
         cmdplcbus = {
@@ -218,6 +137,58 @@ class serialHandler(threading.Thread):
         r["end_bit"] = message[-2:]
         return r
 
+    def _send(self, plcbus_frame):
+        #print("_send")
+        #Resend if proper ACK not received
+        #check for ack pulse
+        explicit_frame = self.explicit_message(plcbus_frame)
+        if (int(plcbus_frame[8:10], 16) >> 5) & 1: #ACK pulse bit set to 1
+            #The ACK message take only 10ms + 10ms to bring it back to the computer.
+            #Anyway, it seems that the mean time before reading the ack is about 
+            #0.6s . Because there is another sleep in the loop, this sleep is only 0.3s
+            # time.sleep(0.3)
+            ACK_received = 0
+            # like a timer, does not wait for more than 2seconds for example
+            time1 = time.time()
+            while not self._stop.isSet():
+                #The ack message is sent immediately after the message has been received 
+                #and transmission time is 20mS (10ms for message propagation to adapter,
+                #and 10ms between adapter and computer
+                #We sleep 20ms between each check
+                self._needs_ack_for(plcbus_frame)
+                self._basic_write(plcbus_frame)
+                time.sleep(0.6)
+                #print("time before wait : %s" % time.time())
+                for i in range(3):
+                    self.receive()
+                    if self._ack.isSet():
+                        print("got ack in first read")
+                        break
+                print("time after wait : %s" % time.time())
+                if self._ack.isSet():
+                    print(plcbus_frame + " : Ack set")
+                    ACK_received = 1
+                    self._ack.clear()
+                    self._cb(self.explicit_message(plcbus_frame))
+                    break
+
+                if (ACK_received == 1):
+                    break
+                elif(time1 + 3.1 < time.time()):
+                    print("WARN : Message %s sent, but ack never received" % plcbus_frame)
+                    break #2s
+        elif explicit_frame["d_command"] not in ['GET_ALL_ID_PULSE', 'GET_ALL_ON_ID_PULSE']:
+            #No ACK asked, we consider that the message has been correctly sent
+            self._basic_write(plcbus_frame)
+            print("explicit_frame=",explicit_frame)
+            self._cb(explicit_frame)
+        else:
+            self._basic_write(plcbus_frame)
+
+    def add_to_send_queue(self, trame):
+         #print("add_to_send_queue : %s" % trame)
+         self._send_queue.put(trame)
+
     def receive(self):
         #Avoid to wait if there is nothing to read
 #        try:
@@ -244,15 +215,20 @@ class serialHandler(threading.Thread):
                     print("ANSWER : %s" % m_string)
                     self._cb(self.explicit_message(m_string))
                 elif self._is_ack(m_string):
-                    print("IS ACK : %s, waited ack : %s" % (m_string, self._waited_ack))
-                    if (self._waited_ack != None) and self._is_ack_for_message(m_string, self._waited_ack):
-                        self._waited_ack = None
-                        self._ack.set()
+                    if self._waited_ack is not None:
+                        print("IS ACK : %s, waited ack : %s" % (m_string.decode('utf-8'), self._waited_ack))
+                        if (self._waited_ack != None) and self._is_ack_for_message(m_string.decode('utf-8'), self._waited_ack):
+                            self._waited_ack = None
+                            self._ack.set()
+                    else:
+                        print("Ack not attend send from another programs?")
+                        self._cb(self.explicit_message(m_string.decode('utf-8')))
                 else:
-                    print("QUEUE : %s" % m_string)
-                    self._cb(self.explicit_message(m_string))
+                    print("QUEUE : %s" % m_string.decode('utf-8'))
+                    self._cb(self.explicit_message(m_string.decode('utf-8')))
 
     def stop(self):
+        #print ("stop")
         """ Ask the thread to stop, 
         will only set a threading.Event instance
         and close serial port
@@ -261,6 +237,7 @@ class serialHandler(threading.Thread):
         self.__myser.close()
 
     def run(self):
+        #print ("run")
         #serial handler main thread
 #        self._mutex.testandset()
         while not self._stop.isSet():
@@ -280,17 +257,58 @@ class serialHandler(threading.Thread):
             #print("receiving")
             self.receive()
 
+    def _needs_ack_for(self, frame):
+        """ Called by the Writer to let Reader knows that a ACK is waited
+        it will set the internal _waited_ack until the ack is received 
+        @param frame : the plcbus frame
+        """
+        #print("_needs_ack_for")
+        self._waited_ack = frame
+
     def _is_ack(self, message):
         """ Check if a message is an ack 
             @param message : message to check
         """
+        #print("_is_ack")
         return int(message[14:16], 16) & 0x20
 
     def _is_from_myself(self, message):
         """ Check if a message is sent by the adapter itself
             @param message : message to check
         """
+        #print("is_from_myself")
         return int(message[14:16], 16) & 0x10
+
+    def _is_ack_for_message(self, m1, m2):
+        #print("_is_ack_for_message")
+        #check the ACK bit
+        print("ACK check " + m1 + " " + m2)
+        #check house code and user code in hexa string format like '45E0'
+        if(m1[4:8].upper() == m2[4:8].upper()) and (m1[8:10].upper() == m2[8:10].upper()): #Compare user code + home unit
+            print("housecode and usercode OK")
+            return (int(m1[14:16], 16) & 0x20) #test only one bit
+        return False
+
+    def _is_answer(self, message):
+        #print("is_answer")
+        # if command is in answer required list (not ACK required, it's
+        # different)
+        # if R_ID_SW bit set
+        # maybe pass this list to the _init_ of this handler to make it
+        # compatible with other protocols
+        if((int(message[14:15], 16) >> 2 & 1) and message[8:10].upper() in
+                ["1C","1D"]):
+            return True
+        return False
+
+    def _basic_write(self, frame):
+        """Write a frame on serial port
+        This method should only be called as mutex.lock() parameter
+        @param frame : The frame to write 
+        """
+        #print("_basic_write")
+        print("SEND : %s" % frame)
+        self.__myser.write(bytes.fromhex(frame))
 
 #a = serialHandler()
 #a.start()
