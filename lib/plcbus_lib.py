@@ -21,220 +21,320 @@ along with Domogik. If not, see U{http://www.gnu.org/licenses}.
 Plugin purpose
 ==============
 
-Support PLCBUS power-based technology
+Get event from PLCBUS and send them on Xpl
 
 Implements
 ==========
 
-- PLCBUSException:.def __init__(self, value):
-- PLCBUSException:.def __str__(self):
-- PLCBUSAPI:.def __init__(self, serial_port_no):
-- PLCBUSAPI:.def _valid_item(self, item):
-- PLCBUSAPI:.def _valid_house(self, house):
-- PLCBUSAPI:.def _valid_usercode(self, item):
-- PLCBUSAPI:.def _convert_device_to_hex(self, item):
-- PLCBUSAPI:.def _convert_data(self, data):
-- PLCBUSAPI:.def send(self, cmd, item, ucod, data1, data2):
-- PLCBUSAPI:.def get_all_on_id(self, usercode, housecode):
+- serialHandler
 
-@author: Domogik project
+@author: Yoann HINARD <yoann.hinard@gmail.com>
 @copyright: (C) 2007-2016 Domogik project
 @license: GPL(v3)
 @organization: Domogik
 """
 
+#import mutex
+import datetime
 import logging
+import queue
+import sys
+import threading
+import time
 from binascii import hexlify
 
-from .PLCBusSerialHandler import serialHandler
+import serial
 _LOGGER = logging.getLogger(__name__)
 
+class serialHandler(threading.Thread):
+    """
+    Threaded class to handle serial port in PLCbus communication
+    Send PLCBUS frames when available in the send_queue and manage
+    retransmission if needed
+    Put received frames in the receveive_queue (to be sent on the MQ network
+    """
 
-class PLCBUSException(Exception):
-    '''
-    PLCBUS Exception
-    '''
-
-    def __init__(self, value):
-        Exception.__init__(self)
-        self.value = value
-
-    def __str__(self):
-        return repr(self.value)
-
-
-class PLCBUSAPI:
-    '''
-    This class define some facilities to use PLCBUS.
-    ALL_USER_UNIT_OFF must be with home unit=00.
-    '''
-
-    def __init__(self, log, serial_port_no, command_cb, message_cb):
-        """ Main PLCBus manager
-        Use serialHandler for low-level serial management
-        @param log : log instance
-        @param serial_port_no : Number or path of the serial port
+    def __init__(self, serial_port_no, command_cb, message_cb):
+        #_LOGGER.debug("__init__")
+        """ Initialize threaded PLCBUS manager
+        Will handle communication to and from PLCBus 
+        @param serial_port_no : Number or path of the serial port 
         @param command_cb: callback called when a command has been succesfully sent
         @param message_cb: called when a message is received from somewhere else on the network
+        For these 2 callbacks, the param is sent as an array
         """
-        self._log = log
-        #For these 2 callbacks, the param is sent as an array
-        self._housecodes = list('ABCDEFGHIJKLMNOP')
-        self._valuecode = enumerate(self._housecodes)
-        self._codevalue = dict([(v, k) for (k, v) in self._valuecode])
-        self._unitcodes = range(1, 17)
-        self._usercodes = list('0123456789ABCDEF')
-        self._cmdplcbus = {
-            #020645000800000c03 because the remote send all user unit off
-            'ALL_UNITS_OFF': '00',
-            'ALL_LIGHTS_ON': '01',
-            'ON': '22', #ON and ask to send ACK (instead of '02')
-            'OFF': '23', #OFF and send ACK
-            'DIM': '24',
-            'BRIGHT': '25',
-            'ALL_LIGHTS_OFF': '06',
-            'ALL_USER_LTS_ON': '07',
-            'ALL_USER_UNIT_OFF': '08',
-            'ALL_USER_LIGHT_OFF': '09',
-            'BLINK': '2a',
-            'FADE_STOP': '2b',
-            'PRESET_DIM': '2c',
-            'STATUS_ON': '0d',
-            'STATUS_OFF': '0e',
-            'STATUS_REQUEST': '0f',
-            'REC_MASTER_ADD_SETUP': '30',
-            'TRA_MASTER_ADD_SETUP': '31',
-            'SCENE_ADR_SETUP': '12',
-            'SCENE_ADR_ERASE': '13',
-            'ALL_SCENES_ADD_ERASE': '34',
-            #'FOR FUTURE': '15',
-            #'FOR FUTURE': '16',
-            #'FOR FUTURE': '17',
-            'GET_SIGNAL_STRENGTH': '18',
-            'GET_NOISE_STRENGTH': '19',
-            'REPORT_SIGNAL_STREN': '1a',
-            'REPORT_NOISE_STREN': '1b',
-            'GET_ALL_ID_PULSE': '1c',
-            'GET_ALL_ON_ID_PULSE': '1d',
-            'REPORT_ALL_ID_PULSE': '1e',
-            'REPORT_ONLY_ON_PULSE': '1f'}
-        #instead of using serial directly, use serialHandler
-        self._ser_handler = serialHandler(serial_port_no, command_cb, message_cb)
-        self._ser_handler.start()
+        threading.Thread.__init__(self)
+        #invoke constructor of parent class
+        self._ack = threading.Event() #Shared list between reader and writer
+        self._need_answer = ["1D", "1C"]
+        self._stop = threading.Event()
+        self._has_message_to_send = threading.Event()
+        #serial port init
+        self.__myser = serial.Serial(serial_port_no, 9600, timeout = 0.4,
+                parity = serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
+                xonxoff = 0) #, rtscts=1)
+#        self._want_lock = threading.Event()
+#        self._mutex = mutex.mutex()
+        self._send_queue = queue.Queue()
+        self._cb = command_cb
+        self._msg_cb = message_cb
+        #self._waited_ack = ""
+        #self._reader = self.__Reader(self.__myser, self._want_lock, self._mutex, self._ack, message_cb)
+        #self._reader.start()
+        #self._writer = self.__Writer(self.__myser, self._want_lock, self._mutex, self._ack, command_cb, self._reader)
+        #self._writer.start()
 
-    def _valid_item(self, item):
-        '''
-        Check an item to have good 'HU' syntax
-        Raise exception if it is not
-        '''
-        h, u = (item[0].upper(), item[1])
-        try:
-            if not (h in self._housecodes and int(u) in self._unitcodes):
-                raise AttributeError
-        except:
-            self._log.warning("Invalid item %s%s, must be 'HU'" % (h, u))
 
-    def _valid_house(self, house):
-        '''
-        Check an house to have good 'H' syntax
-        Raise exception if it is not
-        '''
-        try:
-            if house[0] not in self._housecodes:
-                raise AttributeError
-        except:
-            self._log.warning("Invalid house %s, must be 'H' format, between A and P" % house[0].upper())
+    def explicit_message(self, message):
+        #_LOGGER.debug("explicit_message")
+        """ Parse a frame 
+        """
+        cmdplcbus = {
+        '00': 'ALL_UNITS_OFF',
+        '01': 'ALL_LIGHTS_ON',
+        '22': 'ON', #ON and ask to send ACK (instead of '02')
+        '23': 'OFF', #OFF and send ACK
+        '24': 'DIM',
+        '25': 'BRIGHT',
+        '06': 'ALL_LIGHTS_OFF',
+        '07': 'ALL_USER_LTS_ON',
+        '08': 'ALL_USER_UNIT_OFF',
+        '09': 'ALL_USER_LIGHT_OFF',
+        '2a': 'BLINK',
+        '2b': 'FADE_STOP',
+        '2c': 'PRESET_DIM',
+        '0d': 'STATUS_ON',
+        '0e': 'STATUS_OFF',
+        '0f': 'STATUS_REQUEST',
+        '30': 'REC_MASTER_ADD_SETUP',
+        '31': 'TRA_MASTER_ADD_SETUP',
+        '12': 'SCENE_ADR_SETUP',
+        '13': 'SCENE_ADR_ERASE',
+        '34': 'ALL_SCENES_ADD_ERASE',
+        '15': 'FOR FUTURE',
+        '16': 'FOR FUTURE',
+        '17': 'FOR FUTURE',
+        '18': 'GET_SIGNAL_STRENGTH',
+        '19': 'GET_NOISE_STRENGTH',
+        '1a': 'REPORT_SIGNAL_STREN',
+        '1b': 'REPORT_NOISE_STREN',
+        '1c': 'GET_ALL_ID_PULSE',
+        '1d': 'GET_ALL_ON_ID_PULSE',
+        '1e': 'REPORT_ALL_ID_PULSE',
+        '1f': 'REPORT_ONLY_ON_PULSE'}
+        home = "ABCDEFGHIJKLMNOP"
+        r = {}
+        r["start_bit"] = message[0:2]
+        r["data_length"] = int(message[2:4])
+        int_length = int(message[2:4])*2
+        r["data"] = message[4:4+int_length]
+        r["d_user_code"] = r["data"][0:2]
+        r["d_home_unit"] = "%s%s" % (home[int(r["data"][2:3], 16)],int(r["data"][3:4], 16)+1)
+        r["d_command"] = cmdplcbus[r["data"][4:6]]
+        r["d_data1"] = int(r["data"][6:8],16)
+        r["d_data2"] = int(r["data"][8:10],16)
+        if r["data_length"] == 6:
+            r["rx_tw_switch"] = r["data"][11:]
+        r["end_bit"] = message[-2:]
+        return r
 
-    def _valid_usercode(self, item):
-        '''
-        Check an user code to have good 'H' syntax
-        Raise exception if it is not
-        '''
-        h, u = (item[0].upper(), item[1])
-        try:
-            if not (h in self._usercodes and int(u) in self._usercodes):
-                raise AttributeError
-        except:
-            self._log.warning("Invalid user code %s, must be 'H' format, between 00 and FF" % h)
+    def _send(self, plcbus_frame):
+        #_LOGGER.debug("_send")
+        #Resend if proper ACK not received
+        #check for ack pulse
+        explicit_frame = self.explicit_message(plcbus_frame)
+        if (int(plcbus_frame[8:10], 16) >> 5) & 1: #ACK pulse bit set to 1
+            #The ACK message take only 10ms + 10ms to bring it back to the computer.
+            #Anyway, it seems that the mean time before reading the ack is about 
+            #0.6s . Because there is another sleep in the loop, this sleep is only 0.3s
+            # time.sleep(0.3)
+            ACK_received = 0
+            # like a timer, does not wait for more than 2seconds for example
+            time1 = time.time()
+            while not self._stop.isSet():
+                #The ack message is sent immediately after the message has been received 
+                #and transmission time is 20mS (10ms for message propagation to adapter,
+                #and 10ms between adapter and computer
+                #We sleep 20ms between each check
+                self._needs_ack_for(plcbus_frame)
+                self._basic_write(plcbus_frame)
+                time.sleep(0.6)
+                #_LOGGER.debug("time before wait : %s" % time.time())
+                for i in range(3):
+                    self.receive()
+                    if self._ack.isSet():
+                        _LOGGER.debug("got ack in first read")
+                        break
+                _LOGGER.debug("time after wait : %s" % time.time())
+                if self._ack.isSet():
+                    _LOGGER.debug("%s : Ack set",plcbus_frame)
+                    ACK_received = 1
+                    self._ack.clear()
+                    self._cb(self.explicit_message(plcbus_frame))
+                    break
 
-    def _convert_device_to_hex(self, item):
-        if item == None or len(item) == 0:
-            return "00"
-        elif len(item) == 1:
-            return '%01x0' % (self._codevalue[item[0]])
-        else: 
-            var1 = int(item[1:]) - 1
-            var2 = '%01X%01x' % (self._codevalue[item[0]], var1)
-            return var2
-
-    def _convert_data(self, data):
-        # result must have 2 caracters
-        var1 = hex(int(data))[2:]
-        if len(var1) == 2:
-            var2 = '%01X' % (int(data))
-            return var2
+                if (ACK_received == 1):
+                    break
+                elif(time1 + 3.1 < time.time()):
+                    _LOGGER.debug("WARN : Message %s sent, but ack never received", plcbus_frame)
+                    break #2s
+        elif explicit_frame["d_command"] not in ['GET_ALL_ID_PULSE', 'GET_ALL_ON_ID_PULSE']:
+            #No ACK asked, we consider that the message has been correctly sent
+            self._basic_write(plcbus_frame)
+            _LOGGER.debug("explicit_frame= %s",explicit_frame)
+            self._cb(explicit_frame)
         else:
-            var2 = '0%01X' % (int(data))
-            return var2
+            self._basic_write(plcbus_frame)
 
-    def send(self, cmd, item, ucod, data1 = "00", data2 = "00"):
-        # after cmd add level, rate : put in data1 and data2
-        # (just data1 for these cases)
-        '''
-        Send a command PLCBUS to 1141 plugin
-        @param cmd : Command to send ('ON','OFF', etc)
-        @param item : Item to send order to (must be "HU" format)
-        @param ucod : User code of item (must be 'H' syntax between 00 to FF)
-        '''
-        # TODO : test on ALL_USER_UNIT_OFF
-        #try:
-        try:
-            command = self._cmdplcbus[cmd]
-        except KeyError:
-            _LOGGER.debug("PLCBUS Frame generation error, command does not exist  %s", cmd)
-        else:
-            if cmd == 'ALL_UNITS_OFF':
-                plcbus_frame = '020645000800000c03'
-            else:
-                plcbus_frame = '0205%s%s%s%s%s03' % (ucod,
-                    self._convert_device_to_hex(item), self._cmdplcbus[cmd],
-                    self._convert_data(data1), self._convert_data(data2))
-            try:
-                #message = plcbus_frame.decode('HEX')
-                _LOGGER.debug("message before hexlify %s",plcbus_frame)
-                message = plcbus_frame
-            except TypeError:
-                _LOGGER.debug("PLCBUS Frame generation error, does not result in a HEX string %s", plcbus_frame)
-            else:
-                self._ser_handler.add_to_send_queue(plcbus_frame)
-                
-
-    def get_all_on_id(self, housecode, usercode):
-        '''
-        Fastpoll the housecode and return every on plugins
-        @param usercode : User code of item (must be 'H' syntax between 0 to
-        F) Without device index
-        @param housecode : one or more housecodes
-        '''
-        onlist = []
-        self._valid_house(housecode)
-        if (len(housecode)>1):
-            _LOGGER.debug("housecode length >1 keep only first characters")
-            housecode = housecode[0]
-
-        self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
-        response = self._ser_handler.get_from_answer_queue()
-        if(response):
-            _LOGGER.debug ("Hoora response received", response)
-            data = int(response[10:14], 16)
-            for i in range(0, 16):
-                if data >> i & 1:
-                    onlist.append(housecode + str(self._unitcodes[i]))
-        _LOGGER.debug ("on : %s", onlist)
-        return onlist
+    def add_to_send_queue(self, trame):
+        #_LOGGER.debug("add_to_send_queue : %s", trame)
+        self._send_queue.put(trame)
     
+    def get_from_answer_queue(self):
+        self.receive()
+#        _LOGGER.debug("response= %s" , response)
+ #       return response
+
+
+    def receive(self):
+        #Avoid to wait if there is nothing to read
+#        try:
+        if self._stop.isSet():
+            return
+        if self.__myser.inWaiting() < 9:
+            time.sleep(0.4)
+            return
+        while self.__myser.inWaiting() >= 9:
+            message = self.__myser.read(9) #wait for max 400ms if nothing to read
+#        except IOError:
+#            pass
+            if(message):
+                m_string = hexlify(message)
+                #self.explicit_message(m_string)
+                #if message is likely to be an answer, put it in the right queue
+                #First we check that the message is not from the adapter itself
+                #And simply ignore it if it's the case 
+                _LOGGER.debug("str : %s", m_string)
+                if self._is_from_myself(m_string):
+                    _LOGGER.debug("from myself")
+                    return
+                if self._is_answer(m_string):
+                    _LOGGER.debug("ANSWER : %s", m_string)
+                    self._cb(self.explicit_message(m_string))
+                elif self._is_ack(m_string):
+                    if self._waited_ack is not None:
+                        _LOGGER.debug("IS ACK : %s, waited ack : %s", m_string.decode('utf-8'), self._waited_ack)
+                        if (self._waited_ack != None) and self._is_ack_for_message(m_string.decode('utf-8'), self._waited_ack):
+                            self._waited_ack = None
+                            self._ack.set()
+                    else:
+                        _LOGGER.debug("Ack not attend send from another programs?")
+                        self._cb(self.explicit_message(m_string.decode('utf-8')))
+                else:
+                    _LOGGER.debug("QUEUE : %s", m_string.decode('utf-8'))
+                    self._cb(self.explicit_message(m_string.decode('utf-8')))
+
     def stop(self):
-        """ Ask thread to stop
+        #_LOGGER.debug ("stop")
+        """ Ask the thread to stop, 
+        will only set a threading.Event instance
+        and close serial port
         """
-        self._log.debug("Stopping plcbus serial library")
-        self._ser_handler.stop()
+        self._stop.set()
+        self.__myser.close()
+
+    def run(self):
+        #_LOGGER.debug ("run")
+        #serial handler main thread
+#        self._mutex.testandset()
+        while not self._stop.isSet():
+            #The Event _has_message_to_send is only used to optimize
+            #The test isSet is much faster than the empty() test 
+            #If _has_message_to_send is locked, then there is at least 1 lock(function)
+            #in the queue, so the unlock() will just do this call, 
+            #not really unlock the mutex.
+            try:
+                item = self._send_queue.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                self._send(item)
+#                self._mutex.unlock()
+#                self._mutex.testandset()
+            #_LOGGER.debug("receiving")
+            self.receive()
+
+    def _needs_ack_for(self, frame):
+        """ Called by the Writer to let Reader knows that a ACK is waited
+        it will set the internal _waited_ack until the ack is received 
+        @param frame : the plcbus frame
+        """
+        #_LOGGER.debug("_needs_ack_for")
+        self._waited_ack = frame
+
+    def _is_ack(self, message):
+        """ Check if a message is an ack 
+            @param message : message to check
+        """
+        #_LOGGER.debug("_is_ack")
+        return int(message[14:16], 16) & 0x20
+
+    def _is_from_myself(self, message):
+        """ Check if a message is sent by the adapter itself
+            @param message : message to check
+        """
+        #_LOGGER.debug("is_from_myself")
+        return int(message[14:16], 16) & 0x10
+
+    def _is_ack_for_message(self, m1, m2):
+        #_LOGGER.debug("_is_ack_for_message")
+        #check the ACK bit
+        _LOGGER.debug("ACK check  %s %s ", m1, m2)
+        #check house code and user code in hexa string format like '45E0'
+        if(m1[4:8].upper() == m2[4:8].upper()) and (m1[8:10].upper() == m2[8:10].upper()): #Compare user code + home unit
+            _LOGGER.debug("housecode and usercode OK")
+            return (int(m1[14:16], 16) & 0x20) #test only one bit
+        return False
+
+    def _is_answer(self, message):
+        #_LOGGER.debug("is_answer")
+        # if command is in answer required list (not ACK required, it's
+        # different)
+        # if R_ID_SW bit set
+        # maybe pass this list to the _init_ of this handler to make it
+        # compatible with other protocols
+        if((int(message[14:15], 16) >> 2 & 1) and message[8:10].upper() in
+                ["1C","1D"]):
+            return True
+        return False
+
+    def _basic_write(self, frame):
+        """Write a frame on serial port
+        This method should only be called as mutex.lock() parameter
+        @param frame : The frame to write 
+        """
+        #_LOGGER.debug("_basic_write")
+        _LOGGER.debug("SEND : %s", frame)
+        self.__myser.write(bytes.fromhex(frame))
+
+#a = serialHandler()
+#a.start()
+#pas sur du contenu des trames suivantes
+#trame = '0205000000000003'
+#trame = '0205000102000003'#A2 on
+#trame = '0205000002000003'#A1 on
+#trame = '0205450122000003' #A2 on ack asked
+#trame = '020545E302000003' #B1 on
+#a.add_to_send_queue(trame)
+
+#a.get_from_receive_queue() #attention, bloquant
+
+
+#je n'ai pas gere comment quitter
+#a.join()
+
+
+
+#trame = '0205FF0123000003' #A2 off ack asked
+#trame = '020500000F000003' #Status checking
+#trame = '0205000018000003' #get signal strength
