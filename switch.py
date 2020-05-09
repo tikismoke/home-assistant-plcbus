@@ -53,8 +53,7 @@ def commandCB(self):
         _LOGGER.info("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
         for entity in PlcbusSwitchList:
             if (entity._device_code == self['d_home_unit']) :
-                _LOGGER.info("Device exists:")
-                _LOGGER.info (entity.name)
+                _LOGGER.info("Device exists set status for %s", entity.name)
                 if (self['d_command'] == "STATUS_ON") :
                     entity.set_state(True)
                 elif (self['d_command'] == "STATUS_OFF") :
@@ -104,3 +103,4 @@ class PlcbusSwitch(ToggleEntity):
     def update(self):
         """Get the state and update it."""
         self._plcbus_API.send("STATUS_REQUEST",self._device_code,self._house_code)
+
