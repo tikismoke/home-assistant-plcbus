@@ -18,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
 DOMAIN = "plcbus"
+PlcbusSwitchList = []
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
@@ -30,37 +31,48 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities(entities, True)
     return True
 
-
 def commandCB(self):
     print("commandCB")
     if self['d_command']=="GET_ALL_ID_PULSE":
         print ("get all id pulse reponse",self)
-        for entity in PlcbusSwitch:
-            print (PlcbusSwitch.device_info())
+        for entity in PlcbusSwitchList:
+            print (entity.name)
 
     else:
         print (self)
         print("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
-        for entity in PlcbusSwitch:
-            if (entity._device_code == self['d_home_unit']):
+        for entity in PlcbusSwitchList:
+            if (entity._device_code == self['d_home_unit']) :
                 print("Device exists:")
-                print (PlcbusSwitch.device_info())
+                print (entity.name)
+                if (self['d_command'] == "STATUS_ON") :
+                    entity.set_state(True)
+                elif (self['d_command'] == "STATUS_OFF") :
+                    entity.set_state(False)
+                elif (self['d_command'] == "ON") :
+                    entity.set_state(True)
+                elif (self['d_command'] == "OFF") :
+                    entity.set_state(False)
             else :
-                print("status for not known device")
+                print("status for other device")
+                print (entity.name)
+
 
 def messageCB(self):
     print ("messageCB")
+    print ("messageCB")
 
-class PlcbusSwitch(Api,device_code,house_code):
+class PlcbusSwitch():
     """Representation of a Plcbus switch."""
 
-    def __init__(self) -> None:
+    def __init__(self,plcbus_API, device_code, house_code) -> None:
         """Initialize the Wifi switch."""
-        self._name = "Switch"
+        self._name = "Switch-" + device_code
         self._state = None
-        self._API = API
+        self._plcbus_API = plcbus_API
         self._device_code = device_code
         self._house_code = house_code
+        PlcbusSwitchList.append(self)
 
     @property
     def name(self) -> str:
@@ -74,17 +86,17 @@ class PlcbusSwitch(Api,device_code,house_code):
 
     def set_state(self, state):
         """Turn the switch on or off."""
-        _state = state
+        self._state = state
 
-    async def async_turn_on(self, **kwargs):
+    def turn_on(self, **kwargs):
         """Turn the switch on."""
-        await self.Api.send("ON",_device_code,_house_code)
+        self._plcbus_API.send("ON",self._device_code,self._house_code)
 
-    async def async_turn_off(self, **kwargs):
+    def turn_off(self, **kwargs):
         """Turn the switch off."""
-        await self.Api.send("OFF",_device_code,_house_code)
+        self._plcbus_API.send("OFF",self._device_code,self._house_code)
 
-    async def async_update(self):
+    def update(self):
         """Get the state and update it."""
-        await self.Api.send("STATUS_REQUEST",_device_code,_house_code)
+        self._plcbus_API.send("STATUS_REQUEST",self._device_code,self._house_code)
 
