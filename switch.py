@@ -18,7 +18,6 @@ _LOGGER = logging.getLogger(__name__)
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
 DOMAIN = "plcbus"
-PlcbusSwitchList = []
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
@@ -35,13 +34,13 @@ def commandCB(self):
     print("commandCB")
     if self['d_command']=="GET_ALL_ID_PULSE":
         print ("get all id pulse reponse",self)
-        for entity in PlcbusSwitchList:
+        for entity in entities:
             print (entity.name)
 
     else:
         print (self)
         print("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
-        for entity in PlcbusSwitchList:
+        for entity in entities:
             if (entity._device_code == self['d_home_unit']) :
                 print("Device exists:")
                 print (entity.name)
