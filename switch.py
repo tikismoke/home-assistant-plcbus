@@ -1,165 +1,90 @@
-"""Support for Modbus switches."""
+"""Support for plcbus switches."""
 import logging
 from typing import Optional
 
 
 import voluptuous as vol
 
-from homeassistant.components.switch import PLATFORM_SCHEMA
-from homeassistant.const import (
-    CONF_COMMAND_OFF,
-    CONF_COMMAND_ON,
-    CONF_NAME,
-    CONF_SLAVE,
-    STATE_ON,
-)
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.entity import ToggleEntity
-from homeassistant.helpers.restore_state import RestoreEntity
+from lib.plcbus_lib import PLCBUSAPI, PLCBUSException
 
-from .const import (
-    CALL_TYPE_COIL,
-    CALL_TYPE_REGISTER_HOLDING,
-    CALL_TYPE_REGISTER_INPUT,
-    CONF_COILS,
-    CONF_HUB,
-    CONF_REGISTER,
-    CONF_REGISTER_TYPE,
-    CONF_REGISTERS,
-    CONF_STATE_OFF,
-    CONF_STATE_ON,
-    CONF_VERIFY_REGISTER,
-    CONF_VERIFY_STATE,
-    DEFAULT_HUB,
-    MODBUS_DOMAIN,
-)
+from homeassistant.components.switch import DOMAIN
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.typing import HomeAssistantType
+import homeassistant.helpers.config_validation as cv
+from homeassistant.const import STATE_OFF, STATE_ON
 
 _LOGGER = logging.getLogger(__name__)
 
+ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
-REGISTERS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_COMMAND_OFF): cv.positive_int,
-        vol.Required(CONF_COMMAND_ON): cv.positive_int,
-        vol.Required(CONF_NAME): cv.string,
-        vol.Required(CONF_REGISTER): cv.positive_int,
-        vol.Optional(CONF_HUB, default=DEFAULT_HUB): cv.string,
-        vol.Optional(CONF_REGISTER_TYPE, default=CALL_TYPE_REGISTER_HOLDING): vol.In(
-            [CALL_TYPE_REGISTER_HOLDING, CALL_TYPE_REGISTER_INPUT]
-        ),
-        vol.Optional(CONF_SLAVE): cv.positive_int,
-        vol.Optional(CONF_STATE_OFF): cv.positive_int,
-        vol.Optional(CONF_STATE_ON): cv.positive_int,
-        vol.Optional(CONF_VERIFY_REGISTER): cv.positive_int,
-        vol.Optional(CONF_VERIFY_STATE, default=True): cv.boolean,
-    }
-)
-
-COILS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CALL_TYPE_COIL): cv.positive_int,
-        vol.Required(CONF_NAME): cv.string,
-        vol.Required(CONF_SLAVE): cv.positive_int,
-        vol.Optional(CONF_HUB, default=DEFAULT_HUB): cv.string,
-    }
-)
-
-PLATFORM_SCHEMA = vol.All(
-    cv.has_at_least_one_key(CONF_COILS, CONF_REGISTERS),
-    PLATFORM_SCHEMA.extend(
-        {
-            vol.Optional(CONF_COILS): [COILS_SCHEMA],
-            vol.Optional(CONF_REGISTERS): [REGISTERS_SCHEMA],
-        }
-    ),
-)
-
+DOMAIN = "plcbus"
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Read configuration and create Modbus devices."""
-    switches = []
-    if CONF_COILS in config:
-        for coil in config[CONF_COILS]:
-            hub_name = coil[CONF_HUB]
-            hub = hass.data[MODBUS_DOMAIN][hub_name]
-            switches.append(
-                ModbusCoilSwitch(
-                    hub, coil[CONF_NAME], coil[CONF_SLAVE], coil[CALL_TYPE_COIL]
-                )
-            )
-            
-    add_entities(switches)
+    _LOGGER.info("Setting up plcbus devices ", )
+    Api = PLCBUSAPI(logging,"/dev/ttyUSB0",commandCB,messageCB)
+    entities = []
+    house="D1"
+    device="A3"
+    for devices in device:
+        entities.append(PlcbusSwitch(Api, device, house))
+    add_entities(entities, True)
+    return True
 
 
-class ModbusCoilSwitch(ToggleEntity, RestoreEntity):
-    """Representation of a Modbus coil switch."""
+def commandCB(self):
+    print("commandCB")
+    if self['d_command']=="GET_ALL_ID_PULSE":
+        print ("get all id pulse reponse",self)
+        for entity in PlcbusSwitch:
+            print (PlcbusSwitch.device_info())
 
-    def __init__(self, hub, name, slave, coil):
-        """Initialize the coil switch."""
-        self._hub = hub
-        self._name = name
-        self._slave = int(slave) if slave else None
-        self._coil = int(coil)
-        self._is_on = None
-        self._available = True
+    else:
+        print (self)
+        print("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
+        for entity in PlcbusSwitch:
+            if (entity._device_code == self['d_home_unit']):
+                print("Device exists:")
+                print (PlcbusSwitch.device_info())
+            else :
+                print("status for not known device")
 
-    async def async_added_to_hass(self):
-        """Handle entity which will be added."""
-        state = await self.async_get_last_state()
-        if not state:
-            return
-        self._is_on = state.state == STATE_ON
+def messageCB(self):
+    print ("messageCB")
+
+class PlcbusSwitch(Api,device_code,house_code):
+    """Representation of a Plcbus switch."""
+
+    def __init__(self) -> None:
+        """Initialize the Wifi switch."""
+        self._name = "Switch"
+        self._state = None
+        self._API = API
+        self._device_code = device_code
+        self._house_code = house_code
 
     @property
-    def is_on(self):
-        """Return true if switch is on."""
-        return self._is_on
-
-    @property
-    def name(self):
+    def name(self) -> str:
         """Return the name of the switch."""
         return self._name
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._available
+    def is_on(self) -> bool:
+        """Return true if device is on."""
+        return self._state
 
-    def turn_on(self, **kwargs):
-        """Set switch on."""
-        self._write_coil(self._coil, True)
+    def set_state(self, state):
+        """Turn the switch on or off."""
+        _state = state
 
-    def turn_off(self, **kwargs):
-        """Set switch off."""
-        self._write_coil(self._coil, False)
+    async def async_turn_on(self, **kwargs):
+        """Turn the switch on."""
+        await self.Api.send("ON",_device_code,_house_code)
 
-    def update(self):
-        """Update the state of the switch."""
-        self._is_on = self._read_coil(self._coil)
+    async def async_turn_off(self, **kwargs):
+        """Turn the switch off."""
+        await self.Api.send("OFF",_device_code,_house_code)
 
-    def _read_coil(self, coil) -> Optional[bool]:
-        """Read coil using the Modbus hub slave."""
-        try:
-            result = self._hub.read_coils(self._slave, coil, 1)
-        except ConnectionException:
-            self._available = False
-            return
+    async def async_update(self):
+        """Get the state and update it."""
+        await self.Api.send("STATUS_REQUEST",_device_code,_house_code)
 
-        if isinstance(result, (ModbusException, ExceptionResponse)):
-            self._available = False
-            return
-
-        value = bool(result.bits[0])
-        self._available = True
-
-        return value
-
-    def _write_coil(self, coil, value):
-        """Write coil using the Modbus hub slave."""
-        try:
-            self._hub.write_coil(self._slave, coil, value)
-        except ConnectionException:
-            self._available = False
-            return
-
-        self._available = True
