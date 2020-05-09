@@ -186,8 +186,14 @@ class serialHandler(threading.Thread):
             self._basic_write(plcbus_frame)
 
     def add_to_send_queue(self, trame):
-         #print("add_to_send_queue : %s" % trame)
-         self._send_queue.put(trame)
+        #print("add_to_send_queue : %s" % trame)
+        self._send_queue.put(trame)
+    
+    def get_from_answer_queue(self):
+        self.receive()
+#        print("response=" , response)
+ #       return response
+
 
     def receive(self):
         #Avoid to wait if there is nothing to read
