@@ -43,8 +43,11 @@ Implements
 @organization: Domogik
 """
 
-from .PLCBusSerialHandler import serialHandler
+import logging
 from binascii import hexlify
+
+from .PLCBusSerialHandler import serialHandler
+_LOGGER = logging.getLogger(__name__)
 
 
 class PLCBUSException(Exception):
@@ -188,7 +191,7 @@ class PLCBUSAPI:
         try:
             command = self._cmdplcbus[cmd]
         except KeyError:
-            print("PLCBUS Frame generation error, command does not exist ", cmd)
+            _LOGGER.debug("PLCBUS Frame generation error, command does not exist  %s", cmd)
         else:
             if cmd == 'ALL_UNITS_OFF':
                 plcbus_frame = '020645000800000c03'
@@ -198,10 +201,10 @@ class PLCBUSAPI:
                     self._convert_data(data1), self._convert_data(data2))
             try:
                 #message = plcbus_frame.decode('HEX')
-                print("message before hexlify",plcbus_frame)
+                _LOGGER.debug("message before hexlify %s",plcbus_frame)
                 message = plcbus_frame
             except TypeError:
-                print("PLCBUS Frame generation error, does not result in a HEX string ", plcbus_frame)
+                _LOGGER.debug("PLCBUS Frame generation error, does not result in a HEX string %s", plcbus_frame)
             else:
                 self._ser_handler.add_to_send_queue(plcbus_frame)
                 
@@ -216,18 +219,18 @@ class PLCBUSAPI:
         onlist = []
         self._valid_house(housecode)
         if (len(housecode)>1):
-            print("housecode length >1 keep only first characters")
+            _LOGGER.debug("housecode length >1 keep only first characters")
             housecode = housecode[0]
 
         self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
         response = self._ser_handler.get_from_answer_queue()
         if(response):
-            print ("Hoora response received", response)
+            _LOGGER.debug ("Hoora response received", response)
             data = int(response[10:14], 16)
             for i in range(0, 16):
                 if data >> i & 1:
                     onlist.append(housecode + str(self._unitcodes[i]))
-        print ("on :", onlist)
+        _LOGGER.debug ("on : %s", onlist)
         return onlist
     
     def stop(self):
