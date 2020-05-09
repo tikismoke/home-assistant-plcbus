@@ -2,41 +2,59 @@
 import logging
 from typing import Optional
 
+
+import voluptuous as vol
+
+from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException
+
+
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.switch import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import ToggleEntity
-from lib.plcbus_lib import PLCBUSAPI, PLCBUSException
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "plcbus"
 
+ENTITY_ID_FORMAT = DOMAIN + ".{}"
+
+CONF_DEVICE = 'device'
+
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
+    vol.Required(CONF_DEVICE, "/dev/ttyUSB0"): cv.string,
+})
+PlcbusSwitchList = []
+
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
-    Api = PLCBUSAPI(logging,"/dev/ttyUSB0",commandCB,messageCB)
+
+    device_name = config.get(CONF_DEVICE)
+    Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
     entities = []
-    house="D1"
-    devices="A3"
+    house = "D1"
+    devices = ["A3","B7"]
+    _LOGGER.info ("devices= %s",devices)
     for device in devices:
+        _LOGGER.info("device= %s",device)
         entities.append(PlcbusSwitch(Api, device, house))
     add_entities(entities, True)
     return True
 
 def commandCB(self):
-    print("commandCB")
+    _LOGGER.info("commandCB")
     if self['d_command']=="GET_ALL_ID_PULSE":
-        print ("get all id pulse reponse",self)
+        _LOGGER.info ("get all id pulse reponse  %s",self)
         for entity in PlcbusSwitchList:
-            print (entity.name)
+            _LOGGER.info (entity.name)
 
     else:
-        print (self)
-        print("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
+        _LOGGER.info (self)
+        _LOGGER.info("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
         for entity in PlcbusSwitchList:
             if (entity._device_code == self['d_home_unit']) :
-                print("Device exists:")
-                print (entity.name)
+                _LOGGER.info("Device exists:")
+                _LOGGER.info (entity.name)
                 if (self['d_command'] == "STATUS_ON") :
                     entity.set_state(True)
                 elif (self['d_command'] == "STATUS_OFF") :
@@ -47,7 +65,7 @@ def commandCB(self):
                     entity.set_state(False)
 
 def messageCB(self):
-    print ("messageCB")
+    _LOGGER.info ("messageCB")
 
 class PlcbusSwitch(ToggleEntity):
     """Representation of a Plcbus switch."""
