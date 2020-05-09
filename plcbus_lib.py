@@ -206,16 +206,21 @@ class PLCBUSAPI:
                 self._ser_handler.add_to_send_queue(plcbus_frame)
                 
 
-    def get_all_on_id(self, usercode, housecode):
+    def get_all_on_id(self, housecode, usercode):
         '''
         Fastpoll the housecode and return every on plugins
-        @param usercode : User code of item (must be 'H' syntax between 00 to
-        FF)
+        @param usercode : User code of item (must be 'H' syntax between 0 to
+        F) Without device index
         @param housecode : one or more housecodes
         '''
         onlist = []
+        self._valid_house(housecode)
+        if (len(housecode)>1):
+            print("housecode length >1 keep only first characters")
+            housecode = housecode[0]
+
         self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
-        #response = self._ser_handler.get_from_answer_queue()
+        response = self._ser_handler.get_from_answer_queue()
         if(response):
             print ("Hoora response received", response)
             data = int(response[10:14], 16)
