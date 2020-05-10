@@ -5,7 +5,7 @@
     "dependencies": [],
     "codeowners": ["@Tikismoke"],
     "requirements": [
-      "pyserial==3.4"
+      "pyserial==3.4",
       "pyudev"
     ]
   }
