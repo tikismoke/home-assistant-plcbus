@@ -1,0 +1,18 @@
+author:
+  email: tikismoke@users.noreply.github.com
+  homepage: https://github.com/tikismoke/home-assistant-plcbus
+  name: Tikismoke
+description: plcbus integration
+files:
+  - __init__.py
+  - switch.py
+keywords:
+  - plcbus
+  - switch
+  - homeassistant
+  - home-assistant
+  - custom-component
+  - python
+license: MIT License
+name: switch.plcbus
+type: component
