@@ -33,7 +33,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
     entities = []
     house = "D1"
-    devices = ["A3","B7"]
+    devices = ["A1","A2","A3","A4","B6","B7","B8","B9"]
     _LOGGER.info ("devices= %s",devices)
     for device in devices:
         _LOGGER.info("device= %s",device)
@@ -45,8 +45,7 @@ def commandCB(self):
     _LOGGER.info("commandCB")
     if self['d_command']=="GET_ALL_ID_PULSE":
         _LOGGER.info ("get all id pulse reponse  %s",self)
-        for entity in PlcbusSwitchList:
-            _LOGGER.info (entity.name)
+        
 
     else:
         _LOGGER.info (self)
