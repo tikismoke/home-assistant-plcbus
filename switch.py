@@ -39,12 +39,12 @@ def commandCB(self):
         _LOGGER.debug ("data2=%s",self['d_data2'])
         for i in range(0, 8):
             if self['d_data2'] >> i & 1:
-                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i))
-                device_found.append(self['d_home_unit'][0] + str(i))
+                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                device_found.append(self['d_home_unit'][0] + str(i+1))
         for i in range(0, 8):
             if self['d_data1'] >> i & 1:
-                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+8))
-                device_found.append(self['d_home_unit'][0] + str(i+8))
+                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                device_found.append(self['d_home_unit'][0] + str(i+9))
         
     else:
         _LOGGER.debug (self)
