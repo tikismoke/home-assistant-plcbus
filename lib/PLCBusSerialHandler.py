@@ -78,7 +78,7 @@ class serialHandler(threading.Thread):
         self._send_queue = queue.Queue()
         self._cb = command_cb
         self._msg_cb = message_cb
-        #self._waited_ack = ""
+        self._waited_ack = None
         #self._reader = self.__Reader(self.__myser, self._want_lock, self._mutex, self._ack, message_cb)
         #self._reader.start()
         #self._writer = self.__Writer(self.__myser, self._want_lock, self._mutex, self._ack, command_cb, self._reader)
@@ -263,6 +263,7 @@ class serialHandler(threading.Thread):
 #                self._mutex.testandset()
             #_LOGGER.debug("receiving")
             self.receive()
+            time.sleep(1)
 
     def _needs_ack_for(self, frame):
         """ Called by the Writer to let Reader knows that a ACK is waited
