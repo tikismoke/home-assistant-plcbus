@@ -27,6 +27,6 @@ note the [ ] arround the list....
 If you do not know you unit_code at start the components ask all available unit_code search in log for something like this:
 
 ```
-INFO (Thread-2) [custom_components.plcbus.switch] Find a switch with unit_code A0
-INFO (Thread-2) [custom_components.plcbus.switch] Find a switch with unit_code B5
+INFO (Thread-2) [custom_components.plcbus.switch] Find a device with unit_code A1
+INFO (Thread-2) [custom_components.plcbus.switch] Find a device with unit_code B6
 ```
