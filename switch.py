@@ -73,7 +73,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     entities = []
     devices = config.get(CONF_UNIT)
     _LOGGER.info ("devices= %s",devices)
-    for unit_code in map(chr, range(ord('A'), ord('F')+1)):
+    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
         _LOGGER.debug ("testing unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
     _LOGGER.debug ("device_found= %s",device_found)
