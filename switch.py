@@ -43,7 +43,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info ("devices= %s",devices)
     for device in devices:
         _LOGGER.info("device= %s",device)
-        entities.append(PlcbusSwitch(Api, device, user_code))
+        entities.append(PlcbusSwitch(Api, device, user_code, "mdi:electric-switch"))
     add_entities(entities, True)
     return True
 
@@ -57,7 +57,7 @@ def commandCB(self):
         _LOGGER.info (self)
         _LOGGER.info("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
         for entity in PlcbusSwitchList:
-            if (entity._device_code == self['d_home_unit']) :
+            if (entity._unit_code == self['d_home_unit']) :
                 _LOGGER.info("Device exists set status for %s", entity.name)
                 if (self['d_command'] == "STATUS_ON") :
                     entity.set_state(True)
@@ -74,19 +74,31 @@ def messageCB(self):
 class PlcbusSwitch(ToggleEntity):
     """Representation of a Plcbus switch."""
 
-    def __init__(self,plcbus_API, device_code, house_code) -> None:
+    def __init__(self,plcbus_API, unit_code, user_code, icon) -> None:
         """Initialize the Wifi switch."""
-        self._name = "Switch-" + device_code
+        self._name = "PlcbusSwitch_" + user_code + "_" + unit_code
         self._state = None
         self._plcbus_API = plcbus_API
-        self._device_code = device_code
-        self._house_code = house_code
+        self._unit_code = unit_code
+        self._user_code = user_code
+        self._icon = icon
+        self._unique_id = self._name
         PlcbusSwitchList.append(self)
 
     @property
     def name(self) -> str:
         """Return the name of the switch."""
         return self._name
+
+    @property
+    def unique_id(self) -> str:
+        """Return the unique ID for this sensor."""
+        return f"{self._unique_id}"
+
+    @property
+    def icon(self) -> str:
+        """Return the mdi icon of the entity."""
+        return self._icon
 
     @property
     def is_on(self) -> bool:
@@ -99,13 +111,13 @@ class PlcbusSwitch(ToggleEntity):
 
     def turn_on(self, **kwargs):
         """Turn the switch on."""
-        self._plcbus_API.send("ON",self._device_code,self._house_code)
+        self._plcbus_API.send("ON",self._unit_code,self._user_code)
 
     def turn_off(self, **kwargs):
         """Turn the switch off."""
-        self._plcbus_API.send("OFF",self._device_code,self._house_code)
+        self._plcbus_API.send("OFF",self._unit_code,self._user_code)
 
     def update(self):
         """Get the state and update it."""
-        self._plcbus_API.send("STATUS_REQUEST",self._device_code,self._house_code)
+        self._plcbus_API.send("STATUS_REQUEST",self._unit_code,self._user_code)
 
