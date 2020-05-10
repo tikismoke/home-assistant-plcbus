@@ -4,8 +4,11 @@ author:
   name: Tikismoke
 description: plcbus integration
 files:
-  - __init__.py
-  - switch.py
+  - custom_components/plcbus/__init__.py
+  - custom_components/plcbus/switch.py
+  - custom_components/plcbus/lib/PLCBusSerialHandler.py
+  - custom_components/plcbus/lib/__init__.py
+  - custom_components/plcbus/lib/plcbus_lib.py
 keywords:
   - plcbus
   - switch
