@@ -23,3 +23,10 @@ user_code: (hex format) USER CODE as defined in PLCbus docs from 00 to FF (0 to 
 unit: a comma separated list of unit address tp use as switch (Home_Code from A to K + Unit_Code from 1 to 11)
 
 note the [ ] arround the list....
+
+If you do not know you unit_code at start the components ask all available unit_code search in log for something like this:
+
+```
+INFO (Thread-2) [custom_components.plcbus.switch] Find a switch with unit_code A0
+INFO (Thread-2) [custom_components.plcbus.switch] Find a switch with unit_code B5
+```
