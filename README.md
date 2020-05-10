@@ -4,3 +4,22 @@
 This is a try to make plcbus available in Home Assistant
 
 Let see what future give us.
+
+Configuration YAML looks like:
+
+```YAML
+switch:
+  - platform: plcbus
+    device: '/dev/ttyUSB0'
+    user_code: D1
+    unit: [A1,A2,A3,A4,B6,B7,B8,B9]    
+```
+Where we define a platform for switchlike this:
+
+device: is OPTIONAL it could be find itself by the lib if it's a prolific 2303
+
+user_code: (hex format) USER CODE as defined in PLCbus docs from 00 to FF (0 to 255)
+
+unit: a comma separated list of unit address tp use as switch (Home_Code from A to K + Unit_Code from 1 to 11)
+
+note the [ ] arround the list....
