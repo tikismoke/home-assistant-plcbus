@@ -29,36 +29,29 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_UNIT, default=[]): vol.All(cv.ensure_list_csv, [cv.string]),
 })
 PlcbusSwitchList = []
-
-
-
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    _LOGGER.info("Setting up plcbus devices ", )
-
-    device_name = config.get(CONF_DEVICE)
-    Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
-    user_code = config.get(CONF_USER_CODE)
-    entities = []
-    devices = config.get(CONF_UNIT)
-    _LOGGER.info ("devices= %s",devices)
-    for device in devices:
-        _LOGGER.info("device= %s",device)
-        entities.append(PlcbusSwitch(Api, device, user_code, "mdi:electric-switch"))
-    add_entities(entities, True)
-    return True
+device_found = []
 
 def commandCB(self):
-    _LOGGER.info("commandCB")
+    _LOGGER.debug("commandCB")
     if self['d_command']=="GET_ALL_ID_PULSE":
-        _LOGGER.info ("get all id pulse reponse  %s",self)
+        _LOGGER.debug ("get all id pulse reponse  %s",self)
+        _LOGGER.debug ("data1=%s",self['d_data1'])
+        _LOGGER.debug ("data2=%s",self['d_data2'])
+        for i in range(0, 8):
+            if self['d_data2'] >> i & 1:
+                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                device_found.append(self['d_home_unit'][0] + str(i+1))
+        for i in range(0, 8):
+            if self['d_data1'] >> i & 1:
+                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                device_found.append(self['d_home_unit'][0] + str(i+9))
         
-
     else:
-        _LOGGER.info (self)
-        _LOGGER.info("Current status for %s, is %s", self['d_home_unit'], self['d_command'])
+        _LOGGER.debug (self)
+        _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
         for entity in PlcbusSwitchList:
             if (entity._unit_code == self['d_home_unit']) :
-                _LOGGER.info("Device exists set status for %s", entity.name)
+                _LOGGER.debug("Device exists set status for %s", entity.name)
                 if (self['d_command'] == "STATUS_ON") :
                     entity.set_state(True)
                 elif (self['d_command'] == "STATUS_OFF") :
@@ -70,6 +63,25 @@ def commandCB(self):
 
 def messageCB(self):
     _LOGGER.info ("messageCB")
+
+def setup_platform(hass, config, add_entities, discovery_info=None):
+    _LOGGER.info("Setting up plcbus devices ", )
+
+    device_name = config.get(CONF_DEVICE)
+    Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
+    user_code = config.get(CONF_USER_CODE)
+    entities = []
+    devices = config.get(CONF_UNIT)
+    _LOGGER.info ("devices= %s",devices)
+    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
+        _LOGGER.debug ("testing unit_code= %s",unit_code)
+        Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
+    _LOGGER.debug ("device_found= %s",device_found)
+    for device in devices:
+        _LOGGER.info("device= %s",device)
+        entities.append(PlcbusSwitch(Api, device, user_code, "mdi:electric-switch"))
+    add_entities(entities, True)
+    return True
 
 class PlcbusSwitch(ToggleEntity):
     """Representation of a Plcbus switch."""
