@@ -46,9 +46,25 @@ Implements
 import logging
 from binascii import hexlify
 
+import pyudev
+
 from .PLCBusSerialHandler import serialHandler
+
 _LOGGER = logging.getLogger(__name__)
 
+def get_plcbus_interface():
+    idVendor = '067b'
+    idProduct = '2303'
+    context = pyudev.Context()
+    for device in context.list_devices(subsystem='tty'):
+        if 'ID_VENDOR' not in device:
+            continue
+        if device['ID_VENDOR_ID'] != idVendor:
+            continue
+        if device['ID_MODEL_ID'] != idProduct:
+            continue
+        return device.device_node
+    return None
 
 class PLCBUSException(Exception):
     '''
