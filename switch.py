@@ -5,7 +5,7 @@ from typing import Optional
 
 import voluptuous as vol
 
-from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException
+from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
 
 
 import homeassistant.helpers.config_validation as cv
@@ -22,9 +22,11 @@ ENTITY_ID_FORMAT = DOMAIN + ".{}"
 CONF_DEVICE = 'device'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_DEVICE, "/dev/ttyUSB0"): cv.string,
+    vol.Optional(CONF_DEVICE, default=get_plcbus_interface()): cv.string,
 })
 PlcbusSwitchList = []
+
+
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
