@@ -19,10 +19,14 @@ DOMAIN = "plcbus"
 
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
+CONF_USER_CODE = 'user_code'
 CONF_DEVICE = 'device'
+CONF_UNIT = 'unit'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
+    vol.Required(CONF_USER_CODE): cv.string,
     vol.Optional(CONF_DEVICE, default=get_plcbus_interface()): cv.string,
+    vol.Optional(CONF_UNIT, default=[]): vol.All(cv.ensure_list_csv, [cv.string]),
 })
 PlcbusSwitchList = []
 
@@ -33,13 +37,13 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     device_name = config.get(CONF_DEVICE)
     Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
+    user_code = config.get(CONF_USER_CODE)
     entities = []
-    house = "D1"
-    devices = ["A1","A2","A3","A4","B6","B7","B8","B9"]
+    devices = config.get(CONF_UNIT)
     _LOGGER.info ("devices= %s",devices)
     for device in devices:
         _LOGGER.info("device= %s",device)
-        entities.append(PlcbusSwitch(Api, device, house))
+        entities.append(PlcbusSwitch(Api, device, user_code))
     add_entities(entities, True)
     return True
 
