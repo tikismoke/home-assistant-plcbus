@@ -11,7 +11,7 @@ from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.switch import PLATFORM_SCHEMA
-from homeassistant.helpers.entity import ToggleEntity
+from homeassistant.helpers.entity import Entity, ToggleEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,21 +45,44 @@ def commandCB(self):
             if self['d_data1'] >> i & 1:
                 _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
                 device_found.append(self['d_home_unit'][0] + str(i+9))
-        
+    elif self['d_command']=="GET_ALL_ON_ID_PULSE":
+        _LOGGER.debug ("get all on id pulse reponse  %s",self)
+        _LOGGER.debug ("data1=%s",self['d_data1'])
+        _LOGGER.debug ("data2=%s",self['d_data2'])
+        for i in range(0, 8):
+            if self['d_data2'] >> i & 1:
+                _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                for entity in PlcbusSwitchList:
+                    if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
+                        entity.set_state(True)
+                        ToggleEntity.async_write_ha_state(entity)
+        for i in range(0, 8):
+            if self['d_data1'] >> i & 1:
+                _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                for entity in PlcbusSwitchList:
+                    if (entity._unit_code == self['d_home_unit'][0] + str(i+9)) :
+                        entity.set_state(True)
+                        ToggleEntity.async_write_ha_state(entity)
     else:
         _LOGGER.debug (self)
         _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
         for entity in PlcbusSwitchList:
             if (entity._unit_code == self['d_home_unit']) :
-                _LOGGER.debug("Device exists set status for %s", entity.name)
+                _LOGGER.debug("Device exists %s", entity.name)
                 if (self['d_command'] == "STATUS_ON") :
                     entity.set_state(True)
+                    _LOGGER.debug("Set TRUE %s", entity.name)
                 elif (self['d_command'] == "STATUS_OFF") :
                     entity.set_state(False)
+                    _LOGGER.debug("Set FALSE %s", entity.name)
                 elif (self['d_command'] == "ON") :
                     entity.set_state(True)
+                    _LOGGER.debug("Set TRUE %s", entity.name)
                 elif (self['d_command'] == "OFF") :
                     entity.set_state(False)
+                    _LOGGER.debug("Set FALSE %s", entity.name)
+                ToggleEntity.async_write_ha_state(entity)
+
 
 def messageCB(self):
     _LOGGER.info ("messageCB")
@@ -73,7 +96,9 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     entities = []
     devices = config.get(CONF_UNIT)
     _LOGGER.info ("devices= %s",devices)
+# TODO replace when ok
     for unit_code in map(chr, range(ord('A'), ord('K')+1)):
+#    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
         _LOGGER.debug ("testing unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
     _LOGGER.debug ("device_found= %s",device_found)
@@ -96,6 +121,11 @@ class PlcbusSwitch(ToggleEntity):
         self._icon = icon
         self._unique_id = self._name
         PlcbusSwitchList.append(self)
+
+    @property
+    def should_poll(self):
+        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        return False
 
     @property
     def name(self) -> str:
@@ -123,13 +153,15 @@ class PlcbusSwitch(ToggleEntity):
 
     def turn_on(self, **kwargs):
         """Turn the switch on."""
+        self._is_on = True
         self._plcbus_API.send("ON",self._unit_code,self._user_code)
 
     def turn_off(self, **kwargs):
         """Turn the switch off."""
+        self._is_on = False
         self._plcbus_API.send("OFF",self._unit_code,self._user_code)
 
     def update(self):
         """Get the state and update it."""
-        self._plcbus_API.send("STATUS_REQUEST",self._unit_code,self._user_code)
+        self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
 
