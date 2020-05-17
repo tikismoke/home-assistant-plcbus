@@ -1,12 +1,12 @@
 """Support for plcbus switches."""
 import logging
+from datetime import timedelta
 from typing import Optional
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.components.switch import PLATFORM_SCHEMA
+from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchDevice
 from homeassistant.helpers.entity import Entity, ToggleEntity
-from homeassistant.components.switch import SwitchDevice
 
 from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
 
@@ -19,6 +19,9 @@ ENTITY_ID_FORMAT = DOMAIN + ".{}"
 CONF_USER_CODE = 'user_code'
 CONF_DEVICE = 'device'
 CONF_UNIT = 'unit'
+
+
+SCAN_INTERVAL = timedelta(seconds=60)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_USER_CODE): cv.string,
@@ -50,6 +53,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                     _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
                     # TODO find a way to not add discovered one automatically if already configured
                     device_found.append(PlcbusSwitch(Api, self['d_home_unit'][0] + str(i+9), user_code, "mdi:electric-switch"))
+            device_found.append(PlcbusUnitDataUpdate(Api, self['d_home_unit'], user_code,))
             add_entities(device_found, True)
         elif self['d_command']=="GET_ALL_ON_ID_PULSE":
             _LOGGER.debug ("get all on id pulse reponse  %s",self)
@@ -104,7 +108,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     #for unit_code in map(chr, range(ord('A'), ord('K')+1)):
         _LOGGER.debug ("GET_ALL_ID_PULSE unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
-        entities.append(PlcbusSwitchDataUpdate(Api, unit_code, user_code,))
+        #entities.append(PlcbusUnitDataUpdate(Api, unit_code, user_code,))
 
     #_LOGGER.debug ("device_found= %s",device_found)
     for device in devices:
@@ -167,35 +171,31 @@ class PlcbusSwitch(SwitchDevice):
         self._is_on = False
         self._plcbus_API.send("OFF",self._unit_code,self._user_code)
 
-    def update(self):
-        """Get the state and update it."""
-        #self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
-
-class PlcbusSwitchDataUpdate(Entity):
+class PlcbusUnitDataUpdate(Entity):
     """Class to manage fetching plcbus all_on_id_pulse."""
 
     def __init__(self, plcbus_API, unit_code, user_code):
         """Initialize."""
-        self._name = "PlcbusUpdate_" + user_code + "_" + unit_code
         self._user_code = user_code
         self._plcbus_API = plcbus_API
         self._unit_code = unit_code
-        self._unique_id = self._name
 
     def update(self):
+        """Get the state and update it."""
         _LOGGER.debug("GET_ALL_ON_ID_PULSE unit_code= %s",self._unit_code)
         self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
 
     @property
     def available(self):
-        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        """Not available for HA."""
         return "False"
     
     @property
     def assumed_state(self):
-        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        """Always OFF for HA."""
         return "False"
+
     @property
     def hidden(self):
-        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        """Not shown on HA."""
         return "False"
