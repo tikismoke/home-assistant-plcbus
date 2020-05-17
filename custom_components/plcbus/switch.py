@@ -2,16 +2,13 @@
 import logging
 from typing import Optional
 
-
-import voluptuous as vol
-
-from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
-
-
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.switch import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity, ToggleEntity
+from homeassistant.components.switch import SwitchDevice
+
+from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +31,6 @@ PlcbusSwitchList = []
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
  
-
     def commandCB(self):
         _LOGGER.debug("commandCB")
         if self['d_command']=="GET_ALL_ID_PULSE":
@@ -93,7 +89,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                         _LOGGER.debug("Set FALSE %s", entity.name)
                     ToggleEntity.async_write_ha_state(entity)
 
-
     def messageCB(self):
         _LOGGER.info ("messageCB")
 
@@ -103,20 +98,22 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     entities = []
     devices = config.get(CONF_UNIT)
     _LOGGER.info ("devices= %s",devices)
-# TODO replace when ok
+
+    # TODO replace when ok
     for unit_code in map(chr, range(ord('A'), ord('C')+1)):
-#    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
-        _LOGGER.debug ("testing unit_code= %s",unit_code)
+    #for unit_code in map(chr, range(ord('A'), ord('K')+1)):
+        _LOGGER.debug ("GET_ALL_ID_PULSE unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
+        entities.append(PlcbusSwitchDataUpdate(Api, unit_code, user_code,))
+
     #_LOGGER.debug ("device_found= %s",device_found)
     for device in devices:
         _LOGGER.info("device= %s",device)
         entities.append(PlcbusSwitch(Api, device, user_code, "mdi:electric-switch"))
-
     add_entities(entities, True)
     return True
 
-class PlcbusSwitch(ToggleEntity):
+class PlcbusSwitch(SwitchDevice):
     """Representation of a Plcbus switch."""
 
     def __init__(self,plcbus_API, unit_code, user_code, icon) -> None:
@@ -129,6 +126,7 @@ class PlcbusSwitch(ToggleEntity):
         self._icon = icon
         self._unique_id = self._name
         PlcbusSwitchList.append(self)
+        _LOGGER.debug("Creating switch device= %s with name %s",self._unit_code, self._name)
 
     @property
     def should_poll(self):
@@ -171,5 +169,33 @@ class PlcbusSwitch(ToggleEntity):
 
     def update(self):
         """Get the state and update it."""
+        #self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
+
+class PlcbusSwitchDataUpdate(Entity):
+    """Class to manage fetching plcbus all_on_id_pulse."""
+
+    def __init__(self, plcbus_API, unit_code, user_code):
+        """Initialize."""
+        self._name = "PlcbusUpdate_" + user_code + "_" + unit_code
+        self._user_code = user_code
+        self._plcbus_API = plcbus_API
+        self._unit_code = unit_code
+        self._unique_id = self._name
+
+    def update(self):
+        _LOGGER.debug("GET_ALL_ON_ID_PULSE unit_code= %s",self._unit_code)
         self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
 
+    @property
+    def available(self):
+        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        return "False"
+    
+    @property
+    def assumed_state(self):
+        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        return "False"
+    @property
+    def hidden(self):
+        """No need to poll. entity update is done by get_all_on_id_pulse."""
+        return "False"
