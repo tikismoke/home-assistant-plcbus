@@ -28,67 +28,74 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_DEVICE, default=get_plcbus_interface()): cv.string,
     vol.Optional(CONF_UNIT, default=[]): vol.All(cv.ensure_list_csv, [cv.string]),
 })
+
 PlcbusSwitchList = []
-device_found = []
-
-def commandCB(self):
-    _LOGGER.debug("commandCB")
-    if self['d_command']=="GET_ALL_ID_PULSE":
-        _LOGGER.debug ("get all id pulse reponse  %s",self)
-        _LOGGER.debug ("data1=%s",self['d_data1'])
-        _LOGGER.debug ("data2=%s",self['d_data2'])
-        for i in range(0, 8):
-            if self['d_data2'] >> i & 1:
-                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+1))
-                device_found.append(self['d_home_unit'][0] + str(i+1))
-        for i in range(0, 8):
-            if self['d_data1'] >> i & 1:
-                _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
-                device_found.append(self['d_home_unit'][0] + str(i+9))
-    elif self['d_command']=="GET_ALL_ON_ID_PULSE":
-        _LOGGER.debug ("get all on id pulse reponse  %s",self)
-        _LOGGER.debug ("data1=%s",self['d_data1'])
-        _LOGGER.debug ("data2=%s",self['d_data2'])
-        for i in range(0, 8):
-            if self['d_data2'] >> i & 1:
-                _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+1))
-                for entity in PlcbusSwitchList:
-                    if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
-                        entity.set_state(True)
-                        ToggleEntity.async_write_ha_state(entity)
-        for i in range(0, 8):
-            if self['d_data1'] >> i & 1:
-                _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
-                for entity in PlcbusSwitchList:
-                    if (entity._unit_code == self['d_home_unit'][0] + str(i+9)) :
-                        entity.set_state(True)
-                        ToggleEntity.async_write_ha_state(entity)
-    else:
-        _LOGGER.debug (self)
-        _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
-        for entity in PlcbusSwitchList:
-            if (entity._unit_code == self['d_home_unit']) :
-                _LOGGER.debug("Device exists %s", entity.name)
-                if (self['d_command'] == "STATUS_ON") :
-                    entity.set_state(True)
-                    _LOGGER.debug("Set TRUE %s", entity.name)
-                elif (self['d_command'] == "STATUS_OFF") :
-                    entity.set_state(False)
-                    _LOGGER.debug("Set FALSE %s", entity.name)
-                elif (self['d_command'] == "ON") :
-                    entity.set_state(True)
-                    _LOGGER.debug("Set TRUE %s", entity.name)
-                elif (self['d_command'] == "OFF") :
-                    entity.set_state(False)
-                    _LOGGER.debug("Set FALSE %s", entity.name)
-                ToggleEntity.async_write_ha_state(entity)
-
-
-def messageCB(self):
-    _LOGGER.info ("messageCB")
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info("Setting up plcbus devices ", )
+ 
+
+    def commandCB(self):
+        _LOGGER.debug("commandCB")
+        if self['d_command']=="GET_ALL_ID_PULSE":
+            # Used to ask plcbus to find all device within the house
+            # Some modules might not answer and need to be added manually
+            device_found = []
+            _LOGGER.debug ("get all id pulse reponse  %s",self)
+            _LOGGER.debug ("data1=%s",self['d_data1'])
+            _LOGGER.debug ("data2=%s",self['d_data2'])
+            for i in range(0, 8):
+                if self['d_data2'] >> i & 1:
+                    _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                    # TODO find a way to not add discovered one automatically if already configured
+                    device_found.append(PlcbusSwitch(Api, self['d_home_unit'][0] + str(i+1), user_code, "mdi:electric-switch"))
+            for i in range(0, 8):
+                if self['d_data1'] >> i & 1:
+                    _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                    # TODO find a way to not add discovered one automatically if already configured
+                    device_found.append(PlcbusSwitch(Api, self['d_home_unit'][0] + str(i+9), user_code, "mdi:electric-switch"))
+            add_entities(device_found, True)
+        elif self['d_command']=="GET_ALL_ON_ID_PULSE":
+            _LOGGER.debug ("get all on id pulse reponse  %s",self)
+            _LOGGER.debug ("data1=%s",self['d_data1'])
+            _LOGGER.debug ("data2=%s",self['d_data2'])
+            for i in range(0, 8):
+                if self['d_data2'] >> i & 1:
+                    _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                    for entity in PlcbusSwitchList:
+                        if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
+                            entity.set_state(True)
+                            ToggleEntity.async_write_ha_state(entity)
+            for i in range(0, 8):
+                if self['d_data1'] >> i & 1:
+                    _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                    for entity in PlcbusSwitchList:
+                        if (entity._unit_code == self['d_home_unit'][0] + str(i+9)) :
+                            entity.set_state(True)
+                            ToggleEntity.async_write_ha_state(entity)
+        else:
+            _LOGGER.debug (self)
+            _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
+            for entity in PlcbusSwitchList:
+                if (entity._unit_code == self['d_home_unit']) :
+                    _LOGGER.debug("Device exists %s", entity.name)
+                    if (self['d_command'] == "STATUS_ON") :
+                        entity.set_state(True)
+                        _LOGGER.debug("Set TRUE %s", entity.name)
+                    elif (self['d_command'] == "STATUS_OFF") :
+                        entity.set_state(False)
+                        _LOGGER.debug("Set FALSE %s", entity.name)
+                    elif (self['d_command'] == "ON") :
+                        entity.set_state(True)
+                        _LOGGER.debug("Set TRUE %s", entity.name)
+                    elif (self['d_command'] == "OFF") :
+                        entity.set_state(False)
+                        _LOGGER.debug("Set FALSE %s", entity.name)
+                    ToggleEntity.async_write_ha_state(entity)
+
+
+    def messageCB(self):
+        _LOGGER.info ("messageCB")
 
     device_name = config.get(CONF_DEVICE)
     Api = PLCBUSAPI(logging,device_name,commandCB,messageCB)
@@ -97,14 +104,15 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     devices = config.get(CONF_UNIT)
     _LOGGER.info ("devices= %s",devices)
 # TODO replace when ok
-    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
+    for unit_code in map(chr, range(ord('A'), ord('C')+1)):
 #    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
         _LOGGER.debug ("testing unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
-    _LOGGER.debug ("device_found= %s",device_found)
+    #_LOGGER.debug ("device_found= %s",device_found)
     for device in devices:
         _LOGGER.info("device= %s",device)
         entities.append(PlcbusSwitch(Api, device, user_code, "mdi:electric-switch"))
+
     add_entities(entities, True)
     return True
 
