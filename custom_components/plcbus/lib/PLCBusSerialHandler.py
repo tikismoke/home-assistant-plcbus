@@ -70,9 +70,14 @@ class serialHandler(threading.Thread):
         self._stop = threading.Event()
         self._has_message_to_send = threading.Event()
         #serial port init
-        self.__myser = serial.Serial(serial_port_no, 9600, timeout = 0.4,
-                parity = serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
-                xonxoff = 0) #, rtscts=1)
+        try:
+
+            self.__myser = serial.Serial(serial_port_no, 9600, timeout = 0.4,
+                    parity = serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
+                    xonxoff = 0) #, rtscts=1)
+        except serial.SerialException:
+            _LOGGER.error("can not open serial port %s", serial_port_no)
+            #TODO notify HASS of error
 #        self._want_lock = threading.Event()
 #        self._mutex = mutex.mutex()
         self._send_queue = queue.Queue()
@@ -176,7 +181,7 @@ class serialHandler(threading.Thread):
                 if (ACK_received == 1):
                     break
                 elif(time1 + 3.1 < time.time()):
-                    _LOGGER.debug("WARN : Message %s sent, but ack never received", plcbus_frame)
+                    _LOGGER.error("WARN : Message %s sent, but ack never received", plcbus_frame)
                     break #2s
         elif explicit_frame["d_command"] not in ['GET_ALL_ID_PULSE', 'GET_ALL_ON_ID_PULSE']:
             #No ACK asked, we consider that the message has been correctly sent
