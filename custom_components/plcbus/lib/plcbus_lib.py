@@ -148,7 +148,7 @@ class PLCBUSAPI:
             if not (h in self._housecodes and int(u) in self._unitcodes):
                 raise AttributeError
         except:
-            self._log.warning("Invalid item %s%s, must be 'HU'" % (h, u))
+            self._log.error("Invalid item %s%s, must be 'HU'" % (h, u))
 
     def _valid_house(self, house):
         '''
@@ -159,7 +159,7 @@ class PLCBUSAPI:
             if house[0] not in self._housecodes:
                 raise AttributeError
         except:
-            self._log.warning("Invalid house %s, must be 'H' format, between A and P" % house[0].upper())
+            self._log.error("Invalid house %s, must be 'H' format, between A and P" % house[0].upper())
 
     def _valid_usercode(self, item):
         '''
@@ -171,7 +171,7 @@ class PLCBUSAPI:
             if not (h in self._usercodes and int(u) in self._usercodes):
                 raise AttributeError
         except:
-            self._log.warning("Invalid user code %s, must be 'H' format, between 00 and FF" % h)
+            self._log.error("Invalid user code %s, must be 'H' format, between 00 and FF" % h)
 
     def _convert_device_to_hex(self, item):
         if item == None or len(item) == 0:
@@ -207,7 +207,7 @@ class PLCBUSAPI:
         try:
             command = self._cmdplcbus[cmd]
         except KeyError:
-            _LOGGER.debug("PLCBUS Frame generation error, command does not exist  %s", cmd)
+            _LOGGER.error("PLCBUS Frame generation error, command does not exist  %s", cmd)
         else:
             if cmd == 'ALL_UNITS_OFF':
                 plcbus_frame = '020645000800000c03'
@@ -220,7 +220,7 @@ class PLCBUSAPI:
                 _LOGGER.debug("message before hexlify %s",plcbus_frame)
                 message = plcbus_frame
             except TypeError:
-                _LOGGER.debug("PLCBUS Frame generation error, does not result in a HEX string %s", plcbus_frame)
+                _LOGGER.error("PLCBUS Frame generation error, does not result in a HEX string %s", plcbus_frame)
             else:
                 self._ser_handler.add_to_send_queue(plcbus_frame)
                 
