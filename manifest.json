@@ -6,6 +6,6 @@
     "codeowners": ["@Tikismoke"],
     "requirements": [
       "pyserial==3.4",
-      "pyudev"
+      "pyudev==0.22.0"
     ]
   }
