@@ -104,8 +104,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     _LOGGER.info ("devices= %s",devices)
 
     # TODO replace when ok
-    for unit_code in map(chr, range(ord('A'), ord('C')+1)):
-    #for unit_code in map(chr, range(ord('A'), ord('K')+1)):
+    #for unit_code in map(chr, range(ord('A'), ord('C')+1)):
+    for unit_code in map(chr, range(ord('A'), ord('K')+1)):
         _LOGGER.debug ("GET_ALL_ID_PULSE unit_code= %s",unit_code)
         Api.send("GET_ALL_ID_PULSE",unit_code,user_code)
         #entities.append(PlcbusUnitDataUpdate(Api, unit_code, user_code,))
