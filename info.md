@@ -1,4 +1,4 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-green.svg)](https://github.com/custom-components/hacs)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/release/tikismoke/home-assistant-plcbus)](https://GitHub.com/tikismoke/home-assistant-plcbus/releases/)
 [![GitHub license](https://img.shields.io/github/license/tikismoke/home-assistant-plcbus)](https://github.com/tikismoke/home-assistant-plcbus/blob/master/LICENSE)
 # PLCBus
