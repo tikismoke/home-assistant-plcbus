@@ -5,7 +5,7 @@ from typing import Optional
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchDevice
+from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchEntity
 from homeassistant.helpers.entity import Entity, ToggleEntity
 
 from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
@@ -117,7 +117,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities(entities, True)
     return True
 
-class PlcbusSwitch(SwitchDevice):
+class PlcbusSwitch(SwitchEntity):
     """Representation of a Plcbus switch."""
 
     def __init__(self,plcbus_API, unit_code, user_code, icon) -> None:
