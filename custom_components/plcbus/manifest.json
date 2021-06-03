@@ -4,6 +4,7 @@
     "documentation": "https://github.com/tikismoke/home-assistant-plcbus",
     "issue_tracker": "https://github.com/tikismoke/home-assistant-plcbus/issues",
     "dependencies": [],
+    "version": ["1.0.1"],
     "codeowners": ["@Tikismoke"],
     "requirements": [
       "pyserial==3.4",
