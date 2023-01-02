@@ -5,7 +5,7 @@
 
 I do no more own any plcbus device so I could no more maintained and test the code of this component!
 
-Pull Request are still welcom for sure :)
+Pull Request are still welcome for sure :)
 
 # home-assistant-plcbus
 
