@@ -41,8 +41,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             # Some modules might not answer and need to be added manually
             device_found = []
             _LOGGER.debug ("get all id pulse reponse  %s",self)
-            _LOGGER.debug ("data1=%s",self['d_data1'])
-            _LOGGER.debug ("data2=%s",self['d_data2'])
+            #_LOGGER.debug ("data1=%s",self['d_data1'])
+            #_LOGGER.debug ("data2=%s",self['d_data2'])
             for i in range(0, 8):
                 if self['d_data2'] >> i & 1:
                     _LOGGER.info ("Find a device with unit_code %s", self['d_home_unit'][0] + str(i+1))
@@ -57,22 +57,33 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             add_entities(device_found, True)
         elif self['d_command']=="GET_ALL_ON_ID_PULSE":
             _LOGGER.debug ("get all on id pulse reponse  %s",self)
-            _LOGGER.debug ("data1=%s",self['d_data1'])
-            _LOGGER.debug ("data2=%s",self['d_data2'])
+            #_LOGGER.debug ("data1=%s",self['d_data1'])
+            #_LOGGER.debug ("data2=%s",self['d_data2'])
+#            _LOGGER.debug ("PlcbusSwitchList=%s",PlcbusSwitchList)
+#            for entity in PlcbusSwitchList:
+#                entity.set_state(False)
+#                _LOGGER.info ("Off set_state d_home_unit %s", entity )
             for i in range(0, 8):
                 if self['d_data2'] >> i & 1:
-                    _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+1))
+                    _LOGGER.info ("Find data2 device that is on with unit_code %s", self['d_home_unit'][0] + str(i+1))
                     for entity in PlcbusSwitchList:
                         if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
                             entity.set_state(True)
-                            ToggleEntity.async_write_ha_state(entity)
+                            #ToggleEntity.async_write_ha_state(entity)
+                            #self.schedule_update_ha_state()
+                else:
+                    for entity in PlcbusSwitchList:
+                        if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
+                            entity.set_state(False)
+
             for i in range(0, 8):
                 if self['d_data1'] >> i & 1:
-                    _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
+                    _LOGGER.info ("Find data1 device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
                     for entity in PlcbusSwitchList:
                         if (entity._unit_code == self['d_home_unit'][0] + str(i+9)) :
                             entity.set_state(True)
-                            ToggleEntity.async_write_ha_state(entity)
+                            #ToggleEntity.async_write_ha_state(entity)
+                            #self.schedule_update_ha_state()
         else:
             _LOGGER.debug (self)
             _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
@@ -81,17 +92,18 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                     _LOGGER.debug("Device exists %s", entity.name)
                     if (self['d_command'] == "STATUS_ON") :
                         entity.set_state(True)
-                        _LOGGER.debug("Set TRUE %s", entity.name)
+                        _LOGGER.debug("CMD:STATUS_ON Set TRUE %s", entity.name)
                     elif (self['d_command'] == "STATUS_OFF") :
                         entity.set_state(False)
-                        _LOGGER.debug("Set FALSE %s", entity.name)
+                        _LOGGER.debug("CMD:STATUS_OFF Set FALSE %s", entity.name)
                     elif (self['d_command'] == "ON") :
                         entity.set_state(True)
-                        _LOGGER.debug("Set TRUE %s", entity.name)
+                        _LOGGER.debug("CMD:ON Set TRUE %s", entity.name)
                     elif (self['d_command'] == "OFF") :
                         entity.set_state(False)
-                        _LOGGER.debug("Set FALSE %s", entity.name)
-                    ToggleEntity.async_write_ha_state(entity)
+                        _LOGGER.debug("CMD:OFF Set FALSE %s", entity.name)
+                    #ToggleEntity.async_write_ha_state(entity)
+                    #self.schedule_update_ha_state()
 
     def messageCB(self):
         _LOGGER.info ("messageCB")
@@ -119,11 +131,12 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
 class PlcbusSwitch(SwitchEntity):
     """Representation of a Plcbus switch."""
+    _attr_has_entity_name = True
 
     def __init__(self,plcbus_API, unit_code, user_code, icon) -> None:
         """Initialize the Wifi switch."""
         self._name = "PlcbusSwitch_" + user_code + "_" + unit_code
-        self._state = None
+        self._state = False
         self._plcbus_API = plcbus_API
         self._unit_code = unit_code
         self._user_code = user_code
@@ -135,7 +148,7 @@ class PlcbusSwitch(SwitchEntity):
     @property
     def should_poll(self):
         """No need to poll. entity update is done by get_all_on_id_pulse."""
-        return False
+        return True
 
     @property
     def name(self) -> str:
@@ -153,23 +166,31 @@ class PlcbusSwitch(SwitchEntity):
         return self._icon
 
     @property
-    def is_on(self) -> bool:
-        """Return true if device is on."""
+    def is_on(self):
+        """If the switch is currently on or off."""
+        _LOGGER.debug("switch STATE device= %s with name %s state %s",self._unit_code, self._name, self._state)
         return self._state
 
     def set_state(self, state):
         """Turn the switch on or off."""
         self._state = state
+        _LOGGER.debug("switch set_state device= %s with name %s state %s",self._unit_code, self._name, self._state)
+        #self.schedule_update_ha_state()
 
     def turn_on(self, **kwargs):
         """Turn the switch on."""
-        self._is_on = True
+        self._state = True
+        self.schedule_update_ha_state()
         self._plcbus_API.send("ON",self._unit_code,self._user_code)
+        _LOGGER.debug("switch ON device= %s with name %s state %s",self._unit_code, self._name, self._state)
 
     def turn_off(self, **kwargs):
         """Turn the switch off."""
-        self._is_on = False
+        self._state = False
+        self.schedule_update_ha_state()
         self._plcbus_API.send("OFF",self._unit_code,self._user_code)
+        _LOGGER.debug("switch OFF device= %s with name %s state %s",self._unit_code, self._name, self._state)
+
 
 class PlcbusUnitDataUpdate(Entity):
     """Class to manage fetching plcbus all_on_id_pulse."""
@@ -182,8 +203,9 @@ class PlcbusUnitDataUpdate(Entity):
 
     def update(self):
         """Get the state and update it."""
-        _LOGGER.debug("GET_ALL_ON_ID_PULSE unit_code= %s",self._unit_code)
+        _LOGGER.debug("PlcbusUnitDataUpdate GET_ALL_ON_ID_PULSE unit_code= %s",self._unit_code)
         self._plcbus_API.send("GET_ALL_ON_ID_PULSE",self._unit_code,self._user_code)
+   #     self.schedule_update_ha_state()
 
     @property
     def available(self):
