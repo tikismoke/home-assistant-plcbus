@@ -164,7 +164,7 @@ class serialHandler(threading.Thread):
                 self._needs_ack_for(plcbus_frame)
                 self._basic_write(plcbus_frame)
                 time.sleep(0.6)
-                #_LOGGER.debug("time before wait : %s" % time.time())
+                _LOGGER.debug("time before wait : %s" % time.time())
                 for i in range(3):
                     self.receive()
                     if self._ack.isSet():
@@ -192,12 +192,12 @@ class serialHandler(threading.Thread):
             self._basic_write(plcbus_frame)
 
     def add_to_send_queue(self, trame):
-        #_LOGGER.debug("add_to_send_queue : %s", trame)
+        _LOGGER.debug("add_to_send_queue : %s", trame)
         self._send_queue.put(trame)
     
     def get_from_answer_queue(self):
         self.receive()
-#        _LOGGER.debug("response= %s" , response)
+        _LOGGER.debug("response= %s" , response)
  #       return response
 
 

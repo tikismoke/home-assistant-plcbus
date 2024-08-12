@@ -21,7 +21,7 @@ CONF_DEVICE = 'device'
 CONF_UNIT = 'unit'
 
 
-SCAN_INTERVAL = timedelta(seconds=60)
+SCAN_INTERVAL = timedelta(seconds=120)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_USER_CODE): cv.string,
@@ -65,14 +65,16 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                     for entity in PlcbusSwitchList:
                         if (entity._unit_code == self['d_home_unit'][0] + str(i+1)) :
                             entity.set_state(True)
-                            ToggleEntity.async_write_ha_state(entity)
+                            #ToggleEntity.async_write_ha_state(entity)
+                            #self.schedule_update_ha_state()
             for i in range(0, 8):
                 if self['d_data1'] >> i & 1:
                     _LOGGER.info ("Find device that is on with unit_code %s", self['d_home_unit'][0] + str(i+9))
                     for entity in PlcbusSwitchList:
                         if (entity._unit_code == self['d_home_unit'][0] + str(i+9)) :
                             entity.set_state(True)
-                            ToggleEntity.async_write_ha_state(entity)
+                            #ToggleEntity.async_write_ha_state(entity)
+                            #self.schedule_update_ha_state()
         else:
             _LOGGER.debug (self)
             _LOGGER.debug("receive %s, for unit %s", self['d_command'], self['d_home_unit'])
@@ -91,7 +93,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                     elif (self['d_command'] == "OFF") :
                         entity.set_state(False)
                         _LOGGER.debug("Set FALSE %s", entity.name)
-                    ToggleEntity.async_write_ha_state(entity)
+                    #ToggleEntity.async_write_ha_state(entity)
+                    #self.schedule_update_ha_state()
 
     def messageCB(self):
         _LOGGER.info ("messageCB")
@@ -119,11 +122,12 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
 class PlcbusSwitch(SwitchEntity):
     """Representation of a Plcbus switch."""
+    _attr_has_entity_name = True
 
     def __init__(self,plcbus_API, unit_code, user_code, icon) -> None:
         """Initialize the Wifi switch."""
         self._name = "PlcbusSwitch_" + user_code + "_" + unit_code
-        self._state = None
+        self._state = False
         self._plcbus_API = plcbus_API
         self._unit_code = unit_code
         self._user_code = user_code
@@ -135,7 +139,7 @@ class PlcbusSwitch(SwitchEntity):
     @property
     def should_poll(self):
         """No need to poll. entity update is done by get_all_on_id_pulse."""
-        return False
+        return True
 
     @property
     def name(self) -> str:
@@ -153,8 +157,9 @@ class PlcbusSwitch(SwitchEntity):
         return self._icon
 
     @property
-    def is_on(self) -> bool:
-        """Return true if device is on."""
+    def is_on(self):
+        """If the switch is currently on or off."""
+        _LOGGER.debug("switch STATE device= %s with name %s state %s",self._unit_code, self._name, self._state)
         return self._state
 
     def set_state(self, state):
@@ -163,13 +168,18 @@ class PlcbusSwitch(SwitchEntity):
 
     def turn_on(self, **kwargs):
         """Turn the switch on."""
-        self._is_on = True
+        self._state = True
+        self.schedule_update_ha_state()
         self._plcbus_API.send("ON",self._unit_code,self._user_code)
+        _LOGGER.debug("switch ON device= %s with name %s state %s",self._unit_code, self._name, self._state)
 
     def turn_off(self, **kwargs):
         """Turn the switch off."""
-        self._is_on = False
+        self._state = False
+        self.schedule_update_ha_state()
         self._plcbus_API.send("OFF",self._unit_code,self._user_code)
+        _LOGGER.debug("switch OFF device= %s with name %s state %s",self._unit_code, self._name, self._state)
+
 
 class PlcbusUnitDataUpdate(Entity):
     """Class to manage fetching plcbus all_on_id_pulse."""
