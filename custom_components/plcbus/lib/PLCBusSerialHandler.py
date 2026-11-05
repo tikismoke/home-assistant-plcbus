@@ -65,7 +65,7 @@ class serialHandler(threading.Thread):
         threading.Thread.__init__(self, daemon=True)
         self._ack = threading.Event()
         self._need_answer = ["1D", "1C"]
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._has_message_to_send = threading.Event()
         self._serial = None
         try:
@@ -164,7 +164,7 @@ class serialHandler(threading.Thread):
         if (int(plcbus_frame[8:10], 16) >> 5) & 1:
             ACK_received = 0
             time1 = time.time()
-            while not self._stop.isSet():
+            while not self._stop_event.is_set():
                 self._needs_ack_for(plcbus_frame)
                 self._basic_write(plcbus_frame)
                 time.sleep(0.6)
@@ -212,7 +212,7 @@ class serialHandler(threading.Thread):
 
     def receive(self):
         """Read available frames from the adapter."""
-        if self._stop.isSet() or self._serial is None:
+        if self._stop_event.is_set() or self._serial is None:
             return
         waiting = self._serial.in_waiting if hasattr(self._serial, "in_waiting") else self._serial.inWaiting()
         if waiting < 9:
@@ -263,7 +263,7 @@ class serialHandler(threading.Thread):
 
     def stop(self):
         """Ask the thread to stop and close the serial port."""
-        self._stop.set()
+        self._stop_event.set()
         if self._serial is not None:
             try:
                 self._serial.close()
@@ -272,15 +272,27 @@ class serialHandler(threading.Thread):
 
     def run(self):
         """Serial handler main thread."""
-        while not self._stop.isSet():
+        while not self._stop_event.is_set():
             try:
                 item = self._send_queue.get_nowait()
             except queue.Empty:
                 pass
             else:
-                self._send(item)
-            self.receive()
-            time.sleep(1)
+                try:
+                    self._send(item)
+                except (OSError, serial.SerialException) as err:
+                    if not self._stop_event.is_set():
+                        _LOGGER.error("PLCBUS serial send failed: %s", err)
+                    self.stop()
+                    return
+            try:
+                self.receive()
+            except (OSError, serial.SerialException) as err:
+                if not self._stop_event.is_set():
+                    _LOGGER.error("PLCBUS serial receive failed: %s", err)
+                self.stop()
+                return
+            self._stop_event.wait(1)
 
     def _needs_ack_for(self, frame):
         """Let the reader know that an ACK is waited."""

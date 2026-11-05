@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurar PLCBus",
+        "description": "Configura un adaptador serie PLCBUS. Deja el dispositivo vacío para detectar un Prolific PL2303. Deja las unidades vacías para descubrir dispositivos en las casas A-K.",
+        "data": {
+          "device": "Dispositivo serie",
+          "user_code": "Código de usuario",
+          "unit": "Unidades (separadas por comas)"
+        },
+        "data_description": {
+          "device": "Por ejemplo /dev/serial/by-id/... o /dev/ttyUSB0.",
+          "user_code": "Exactamente dos dígitos hexadecimales, de 00 a FF.",
+          "unit": "Por ejemplo A1,A2,B6. Casas A-P y unidades 1-16."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar PLCBus",
+        "description": "Cambiar estos ajustes recarga la integración. Elimina la configuración YAML antigua de PLCBUS después de importarla.",
+        "data": {
+          "device": "Dispositivo serie",
+          "user_code": "Código de usuario",
+          "unit": "Unidades (separadas por comas)"
+        },
+        "data_description": {
+          "device": "Por ejemplo /dev/serial/by-id/... o /dev/ttyUSB0.",
+          "user_code": "Exactamente dos dígitos hexadecimales, de 00 a FF.",
+          "unit": "Por ejemplo A1,A2,B6. Deja vacío para descubrir automáticamente."
+        }
+      }
+    },
+    "error": {
+      "invalid_config": "Introduce un código hexadecimal de dos dígitos y unidades válidas (A-P, 1-16). Si no se detecta el adaptador, especifica su ruta serie.",
+      "cannot_connect": "No se pudo detectar el adaptador serie. Comprueba la ruta y los permisos."
+    },
+    "abort": {
+      "single_instance_allowed": "Solo se permite una conexión PLCBus. Reconfigura la integración existente.",
+      "already_configured": "PLCBus ya está configurado.",
+      "invalid_config": "La configuración YAML no es válida o no se detectó un adaptador serie.",
+      "reconfigure_successful": "PLCBus se ha reconfigurado."
+    }
+  }
+}

@@ -44,6 +44,7 @@ Implements
 """
 
 import logging
+import threading
 from binascii import hexlify
 
 import pyudev
@@ -273,3 +274,5 @@ class PLCBUSAPI:
         """
         self._log.debug("Stopping plcbus serial library")
         self._ser_handler.stop()
+        if threading.current_thread() is not self._ser_handler:
+            self._ser_handler.join()

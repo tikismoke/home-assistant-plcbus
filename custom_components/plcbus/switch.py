@@ -6,89 +6,102 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.switch import PLATFORM_SCHEMA, SwitchEntity
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.helpers.event import track_time_interval
+from homeassistant.core import callback
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.event import async_track_time_interval
 
+from .const import CONF_DEVICE, CONF_UNIT, CONF_USER_CODE, DOMAIN
 from .lib.plcbus_lib import PLCBUSAPI, PLCBUSException, get_plcbus_interface
+from .validation import normalize_unit_code, normalize_user_code
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "plcbus"
-
-CONF_USER_CODE = "user_code"
-CONF_DEVICE = "device"
-CONF_UNIT = "unit"
-
 SCAN_INTERVAL = timedelta(seconds=60)
-
-
-def _normalize_user_code(value):
-    """Validate and normalize a two-digit hexadecimal PLCBUS user code."""
-    if len(value) != 2 or any(char not in "0123456789abcdefABCDEF" for char in value):
-        raise vol.Invalid("user_code must contain exactly two hexadecimal digits")
-    return value.upper()
-
-
-def _normalize_unit_code(value):
-    """Validate and normalize a PLCBUS house and unit address."""
-    value = value.upper()
-    if len(value) < 2 or value[0] not in "ABCDEFGHIJKLMNOP":
-        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
-    unit_value = value[1:]
-    if not unit_value.isascii() or not unit_value.isdigit():
-        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
-    unit = int(unit_value)
-    if not 1 <= unit <= 16:
-        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
-    return "%s%d" % (value[0], unit)
-
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(CONF_USER_CODE): vol.All(cv.string, _normalize_user_code),
+        vol.Required(CONF_USER_CODE): vol.All(cv.string, normalize_user_code),
         vol.Optional(CONF_DEVICE): cv.string,
         vol.Optional(CONF_UNIT, default=[]): vol.All(
-            cv.ensure_list_csv, [vol.All(cv.string, _normalize_unit_code)]
+            cv.ensure_list_csv, [vol.All(cv.string, normalize_unit_code)]
         ),
     }
 )
 
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up PLCBUS switches from YAML."""
+    """Import legacy YAML into a configuration entry."""
+    hass.add_job(
+        hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "import"}, data=dict(config)
+        )
+    )
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up switches from UI or imported configuration."""
+    runtime = {"api": None, "switches": [], "houses": set(), "pending": []}
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
+
+    def add_entities(entities, update_before_add=False):
+        hass.add_job(async_add_entities, entities, update_before_add)
+
+    try:
+        await hass.async_add_executor_job(
+            _setup_switches, hass, entry.data, add_entities, runtime
+        )
+    except (PLCBUSException, OSError) as err:
+        runtime["stopped"] = True
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        if runtime["api"] is not None:
+            await hass.async_add_executor_job(runtime["api"].stop)
+        raise ConfigEntryNotReady(str(err)) from err
+
+    @callback
+    def _poll_on_ids(_now=None):
+        if runtime.get("stopped"):
+            return
+        for house in list(runtime["houses"]):
+            runtime["api"].send("GET_ALL_ON_ID_PULSE", house, entry.data[CONF_USER_CODE])
+
+    cancel_poll = async_track_time_interval(hass, _poll_on_ids, SCAN_INTERVAL)
+
+    async def _shutdown(_event=None):
+        if runtime.get("stopped"):
+            return
+        runtime["stopped"] = True
+        cancel_poll()
+        cancel_stop()
+        await hass.async_add_executor_job(runtime["api"].stop)
+
+    cancel_stop = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
+    runtime["shutdown"] = _shutdown
+
+
+def _setup_switches(hass, config, add_entities, runtime):
+    """Start serial communication in the executor."""
     _LOGGER.info("Setting up plcbus devices")
 
     device_name = config.get(CONF_DEVICE) or get_plcbus_interface()
     if not device_name:
-        _LOGGER.error(
-            "No PLCBUS serial device found. Set switch.plcbus.device "
-            "(for example /dev/ttyUSB0)"
+        raise PLCBUSException(
+            "No PLCBUS serial device found. Reconfigure PLCBus with a device path."
         )
-        return False
-
-    previous_data = hass.data.get(DOMAIN, {})
-    cancel_poll = previous_data.get("cancel_poll")
-    if cancel_poll is not None:
-        cancel_poll()
-    previous = previous_data.get("api")
-    if previous is not None:
-        _LOGGER.info("Stopping previous PLCBUS serial handler before reload")
-        previous.stop()
-
-    hass.data[DOMAIN] = {
-        "api": None,
-        "switches": [],
-        "houses": set(),
-        "cancel_poll": None,
-    }
-    switches = hass.data[DOMAIN]["switches"]
-    houses = hass.data[DOMAIN]["houses"]
+    switches = runtime["switches"]
+    houses = runtime["houses"]
     user_code = config.get(CONF_USER_CODE)
     devices = config.get(CONF_UNIT) or []
 
     def _known_units():
         return {entity.unit_code for entity in switches}
 
-    def commandCB(message):
+    @callback
+    def _handle_command(message):
+        if runtime.get("stopped"):
+            return
+        if not runtime.get("ready"):
+            runtime["pending"].append(message)
+            return
         _LOGGER.debug("commandCB")
         try:
             command = message["d_command"]
@@ -141,13 +154,11 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     def messageCB(_message):
         _LOGGER.debug("messageCB")
 
-    try:
-        Api = PLCBUSAPI(logging, device_name, commandCB, messageCB)
-    except (PLCBUSException, OSError) as err:
-        _LOGGER.error("Failed to start PLCBUS on %s: %s", device_name, err)
-        return False
+    def commandCB(message):
+        hass.add_job(_handle_command, message)
 
-    hass.data[DOMAIN]["api"] = Api
+    Api = PLCBUSAPI(logging, device_name, commandCB, messageCB)
+    runtime["api"] = Api
 
     entities = []
     for device in devices:
@@ -162,19 +173,14 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         _LOGGER.debug("GET_ALL_ID_PULSE unit_code= %s", unit_code)
         Api.send("GET_ALL_ID_PULSE", unit_code, user_code)
 
-    def _poll_on_ids(_now=None):
-        poll_houses = houses or {device[0].upper() for device in devices if device}
-        for house in list(poll_houses):
-            Api.send("GET_ALL_ON_ID_PULSE", house, user_code)
+    @callback
+    def _ready():
+        runtime["ready"] = True
+        for message in runtime["pending"]:
+            _handle_command(message)
+        runtime["pending"].clear()
 
-    cancel_poll = track_time_interval(hass, _poll_on_ids, SCAN_INTERVAL)
-    hass.data[DOMAIN]["cancel_poll"] = cancel_poll
-
-    def _shutdown(_event=None):
-        cancel_poll()
-        Api.stop()
-
-    hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
+    hass.add_job(_ready)
     return True
 
 
