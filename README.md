@@ -2,8 +2,6 @@
 [![Latest release](https://img.shields.io/github/v/release/demonio669/home-assistant-plcbus)](https://github.com/demonio669/home-assistant-plcbus/releases)
 # Maintenance notice
 
-I no longer own a PLCBUS device, so I cannot test or actively maintain this integration. Contributions and pull requests are welcome.
-
 ## Installation with HACS
 
 This repository is not part of the HACS default store. Add it as a custom repository:
