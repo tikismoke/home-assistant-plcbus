@@ -1,20 +1,23 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-green.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/release/tikismoke/home-assistant-plcbus)](https://GitHub.com/tikismoke/home-assistant-plcbus/releases/)
-[![GitHub license](https://img.shields.io/github/license/tikismoke/home-assistant-plcbus)](https://github.com/tikismoke/home-assistant-plcbus/blob/master/LICENSE)
-# Important NOTE
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://www.hacs.xyz/docs/faq/custom_repositories/)
+[![Latest release](https://img.shields.io/github/v/release/demonio669/home-assistant-plcbus)](https://github.com/demonio669/home-assistant-plcbus/releases)
+# Maintenance notice
 
-I do no more own any plcbus device so I could no more maintained and test the code of this component!
+I no longer own a PLCBUS device, so I cannot test or actively maintain this integration. Contributions and pull requests are welcome.
 
-Pull Request are still welcome for sure :)
+## Installation with HACS
 
-# home-assistant-plcbus
+This repository is not part of the HACS default store. Add it as a custom repository:
 
+1. In Home Assistant, open **HACS > Integrations**.
+2. Open the menu and choose **Custom repositories**.
+3. Add `https://github.com/demonio669/home-assistant-plcbus` and select **Integration** as the category.
+4. Install **PLCBus** from HACS and restart Home Assistant.
 
-This is a try to make plcbus available in Home Assistant
+Alternatively, copy `custom_components/plcbus` into the `custom_components` directory of your Home Assistant configuration and restart.
 
-Let see what future give us.
+## Configuration
 
-Configuration YAML looks like:
+The integration is configured in `configuration.yaml`:
 
 ```YAML
 switch:
@@ -23,19 +26,21 @@ switch:
     user_code: D1
     unit: [A1,A2,A3,A4,B6,B7,B8,B9]    
 ```
-Where we define a platform for switchlike this:
+Configuration options:
 
-device: is OPTIONAL it could be find itself by the lib if it's a prolific 2303
+- `device` (optional): serial device path. If omitted, the integration attempts to find a Prolific PL2303 adapter.
+- `user_code` (required): two-digit hexadecimal PLCBUS user code (`00` to `FF`).
+- `unit` (optional): list of house/unit addresses, such as `A1` or `B6`. If omitted, the integration searches for available units and logs discoveries.
 
-user_code: (hex format) USER CODE as defined in PLCbus docs from 00 to FF (0 to 255)
+Automatic unit discovery currently queries house codes A through K. Explicit addresses support house codes A through P and unit numbers 1 through 16.
 
-unit: a comma separated list of unit address tp use as switch (Home_Code from A to K + Unit_Code from 1 to 11)
-
-note the [ ] arround the list....
-
-If you do not know you unit_code at start the components ask all available unit_code search in log for something like this:
+Discovered units are logged, for example:
 
 ```
-INFO (Thread-2) [custom_components.plcbus.switch] Find a device with unit_code A1
-INFO (Thread-2) [custom_components.plcbus.switch] Find a device with unit_code B6
+INFO [custom_components.plcbus.switch] Find a device with unit_code A1
+INFO [custom_components.plcbus.switch] Find a device with unit_code B6
 ```
+
+## Limitations
+
+Only switch control is supported; dimming, brightness, and scenes are not implemented. A PLCBUS serial adapter is required.

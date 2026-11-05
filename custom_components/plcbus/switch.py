@@ -20,11 +20,35 @@ CONF_UNIT = "unit"
 
 SCAN_INTERVAL = timedelta(seconds=60)
 
+
+def _normalize_user_code(value):
+    """Validate and normalize a two-digit hexadecimal PLCBUS user code."""
+    if len(value) != 2 or any(char not in "0123456789abcdefABCDEF" for char in value):
+        raise vol.Invalid("user_code must contain exactly two hexadecimal digits")
+    return value.upper()
+
+
+def _normalize_unit_code(value):
+    """Validate and normalize a PLCBUS house and unit address."""
+    value = value.upper()
+    if len(value) < 2 or value[0] not in "ABCDEFGHIJKLMNOP":
+        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
+    unit_value = value[1:]
+    if not unit_value.isascii() or not unit_value.isdigit():
+        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
+    unit = int(unit_value)
+    if not 1 <= unit <= 16:
+        raise vol.Invalid("unit must be a house code A-P followed by a unit 1-16")
+    return "%s%d" % (value[0], unit)
+
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(CONF_USER_CODE): cv.string,
+        vol.Required(CONF_USER_CODE): vol.All(cv.string, _normalize_user_code),
         vol.Optional(CONF_DEVICE): cv.string,
-        vol.Optional(CONF_UNIT, default=[]): vol.All(cv.ensure_list_csv, [cv.string]),
+        vol.Optional(CONF_UNIT, default=[]): vol.All(
+            cv.ensure_list_csv, [vol.All(cv.string, _normalize_unit_code)]
+        ),
     }
 )
 
@@ -41,7 +65,11 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         )
         return False
 
-    previous = hass.data.get(DOMAIN, {}).get("api")
+    previous_data = hass.data.get(DOMAIN, {})
+    cancel_poll = previous_data.get("cancel_poll")
+    if cancel_poll is not None:
+        cancel_poll()
+    previous = previous_data.get("api")
     if previous is not None:
         _LOGGER.info("Stopping previous PLCBUS serial handler before reload")
         previous.stop()
@@ -50,6 +78,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         "api": None,
         "switches": [],
         "houses": set(),
+        "cancel_poll": None,
     }
     switches = hass.data[DOMAIN]["switches"]
     houses = hass.data[DOMAIN]["houses"]
@@ -120,11 +149,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     hass.data[DOMAIN]["api"] = Api
 
-    def _shutdown(_event=None):
-        Api.stop()
-
-    hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
-
     entities = []
     for device in devices:
         _LOGGER.info("device= %s", device)
@@ -143,7 +167,14 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         for house in list(poll_houses):
             Api.send("GET_ALL_ON_ID_PULSE", house, user_code)
 
-    track_time_interval(hass, _poll_on_ids, SCAN_INTERVAL)
+    cancel_poll = track_time_interval(hass, _poll_on_ids, SCAN_INTERVAL)
+    hass.data[DOMAIN]["cancel_poll"] = cancel_poll
+
+    def _shutdown(_event=None):
+        cancel_poll()
+        Api.stop()
+
+    hass.bus.listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
     return True
 
 
@@ -169,11 +200,11 @@ class PlcbusSwitch(SwitchEntity):
 
     def __init__(self, plcbus_API, unit_code, user_code, icon, registry) -> None:
         """Initialize the PLCBUS switch."""
-        self._name = "PlcbusSwitch_" + user_code + "_" + unit_code
+        self._unit_code = unit_code.upper()
+        self._user_code = user_code.upper()
+        self._name = "PlcbusSwitch_" + self._user_code + "_" + self._unit_code
         self._state = False
         self._plcbus_API = plcbus_API
-        self._unit_code = unit_code
-        self._user_code = user_code
         self._icon = icon
         self._unique_id = self._name
         registry.append(self)
@@ -226,24 +257,18 @@ class PlcbusSwitch(SwitchEntity):
 
     def turn_on(self, **kwargs):
         """Turn the switch on."""
-        self._state = True
-        self.schedule_update_ha_state()
         self._plcbus_API.send("ON", self._unit_code, self._user_code)
         _LOGGER.debug(
-            "switch ON device= %s with name %s state %s",
+            "switch ON command queued for device= %s with name %s",
             self._unit_code,
             self._name,
-            self._state,
         )
 
     def turn_off(self, **kwargs):
         """Turn the switch off."""
-        self._state = False
-        self.schedule_update_ha_state()
         self._plcbus_API.send("OFF", self._unit_code, self._user_code)
         _LOGGER.debug(
-            "switch OFF device= %s with name %s state %s",
+            "switch OFF command queued for device= %s with name %s",
             self._unit_code,
             self._name,
-            self._state,
         )

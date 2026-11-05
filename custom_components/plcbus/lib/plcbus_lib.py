@@ -146,9 +146,12 @@ class PLCBUSAPI:
         Check an item to have good 'HU' syntax
         Raise exception if it is not
         '''
-        if not item or len(item) < 2:
+        if not isinstance(item, str) or len(item) < 2:
             raise PLCBUSException("Invalid item %s, must be 'HU'" % item)
-        h = item[0].upper()
+        item = item.upper()
+        h = item[0]
+        if not item[1:].isascii() or not item[1:].isdigit():
+            raise PLCBUSException("Invalid item %s, must be 'HU'" % item)
         try:
             u = int(item[1:])
         except (TypeError, ValueError):
@@ -171,7 +174,7 @@ class PLCBUSAPI:
         Check an user code to have good hex syntax
         Raise exception if it is not
         '''
-        if not item or len(item) < 2:
+        if not isinstance(item, str) or len(item) != 2:
             raise PLCBUSException("Invalid user code %s, must be between 00 and FF" % item)
         h, u = (item[0].upper(), item[1].upper())
         if h not in self._usercodes or u not in self._usercodes:
@@ -180,7 +183,8 @@ class PLCBUSAPI:
     def _convert_device_to_hex(self, item):
         if item == None or len(item) == 0:
             return "00"
-        elif len(item) == 1:
+        item = item.upper()
+        if len(item) == 1:
             return '%01x0' % (self._codevalue[item[0]])
         else: 
             var1 = int(item[1:]) - 1
@@ -206,19 +210,22 @@ class PLCBUSAPI:
         @param item : Item to send order to (must be "HU" format)
         @param ucod : User code of item (must be 'H' syntax between 00 to FF)
         '''
-        # TODO : test on ALL_USER_UNIT_OFF
-        #try:
         try:
             command = self._cmdplcbus[cmd]
-        except KeyError:
-            _LOGGER.error("PLCBUS Frame generation error, command does not exist  %s", cmd)
-            return
+        except (KeyError, TypeError) as err:
+            raise PLCBUSException(
+                "PLCBUS command does not exist: %s" % cmd
+            ) from err
         try:
+            self._valid_usercode(ucod)
+            ucod = ucod.upper()
             if cmd != "ALL_UNITS_OFF":
                 if item and len(item) == 1:
                     self._valid_house(item)
                 elif item:
                     self._valid_item(item)
+                if isinstance(item, str):
+                    item = item.upper()
             if cmd == 'ALL_UNITS_OFF':
                 plcbus_frame = '020645000800000c03'
             else:
@@ -227,11 +234,14 @@ class PLCBUSAPI:
                     self._convert_data(data1), self._convert_data(data2))
             _LOGGER.debug("message before hexlify %s", plcbus_frame)
             self._ser_handler.add_to_send_queue(plcbus_frame)
-        except PLCBUSException as err:
-            _LOGGER.error("%s", err)
-        except (TypeError, ValueError, KeyError):
-            _LOGGER.exception("PLCBUS Frame generation error for cmd=%s item=%s", cmd, item)
-                
+            return True
+        except PLCBUSException:
+            raise
+        except (TypeError, ValueError, KeyError) as err:
+            raise PLCBUSException(
+                "PLCBUS frame generation failed for cmd=%s item=%s: %s"
+                % (cmd, item, err)
+            ) from err
 
     def get_all_on_id(self, housecode, usercode):
         '''
@@ -245,6 +255,7 @@ class PLCBUSAPI:
         if (len(housecode)>1):
             _LOGGER.debug("housecode length >1 keep only first characters")
             housecode = housecode[0]
+        housecode = housecode.upper()
 
         self.send("GET_ALL_ON_ID_PULSE", housecode + "1", usercode)
         response = self._ser_handler.get_from_answer_queue()

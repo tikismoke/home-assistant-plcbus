@@ -1,6 +1,6 @@
 {
     "domain": "plcbus",
-    "name": "Plcbus integration",
+    "name": "PLCBus",
     "documentation": "https://github.com/demonio669/home-assistant-plcbus",
     "issue_tracker": "https://github.com/demonio669/home-assistant-plcbus/issues",
     "dependencies": [],

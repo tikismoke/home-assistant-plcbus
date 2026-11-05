@@ -89,6 +89,13 @@ class serialHandler(threading.Thread):
     def explicit_message(self, message):
         """Parse a frame."""
         message = _to_hex_str(message)
+        if not isinstance(message, str) or len(message) < 16 or len(message) % 2:
+            raise ValueError("PLCBUS frame is truncated")
+        if any(char not in "0123456789abcdefABCDEF" for char in message):
+            raise ValueError("PLCBUS frame contains non-hexadecimal data")
+        if message[:2].lower() != "02":
+            raise ValueError("PLCBUS frame has an invalid start byte")
+
         cmdplcbus = {
             "00": "ALL_UNITS_OFF",
             "01": "ALL_LIGHTS_ON",
@@ -126,12 +133,20 @@ class serialHandler(threading.Thread):
         home = "ABCDEFGHIJKLMNOP"
         r = {}
         r["start_bit"] = message[0:2]
-        r["data_length"] = int(message[2:4])
-        int_length = int(message[2:4]) * 2
-        r["data"] = message[4 : 4 + int_length]
+        r["data_length"] = int(message[2:4], 16)
+        if r["data_length"] < 5:
+            raise ValueError("PLCBUS frame does not contain all required fields")
+        int_length = r["data_length"] * 2
+        data_end = 4 + int_length
+        if len(message) < data_end + 2:
+            raise ValueError("PLCBUS frame is shorter than its declared data length")
+        r["data"] = message[4:data_end]
         r["d_user_code"] = r["data"][0:2]
+        house_index = int(r["data"][2:3], 16)
+        if house_index >= len(home):
+            raise ValueError("PLCBUS frame contains an invalid house code")
         r["d_home_unit"] = "%s%s" % (
-            home[int(r["data"][2:3], 16)],
+            home[house_index],
             int(r["data"][3:4], 16) + 1,
         )
         command_key = r["data"][4:6].lower()
@@ -219,13 +234,18 @@ class serialHandler(threading.Thread):
                 continue
             m_string = _to_hex_str(message)
             _LOGGER.debug("str : %s", m_string)
+            try:
+                parsed_message = self.explicit_message(m_string)
+            except ValueError as err:
+                _LOGGER.warning("Ignoring malformed PLCBUS frame %s: %s", m_string, err)
+                continue
             if self._is_from_myself(m_string):
                 _LOGGER.debug("from myself")
                 continue
             if self._is_answer(m_string):
                 _LOGGER.debug("ANSWER : %s", m_string)
                 self._answer_queue.put(m_string)
-                self._cb(self.explicit_message(m_string))
+                self._cb(parsed_message)
             elif self._is_ack(m_string):
                 if self._waited_ack is not None:
                     _LOGGER.debug(
@@ -236,10 +256,10 @@ class serialHandler(threading.Thread):
                         self._ack.set()
                 else:
                     _LOGGER.debug("Ack not attend send from another programs?")
-                    self._cb(self.explicit_message(m_string))
+                    self._cb(parsed_message)
             else:
                 _LOGGER.debug("QUEUE : %s", m_string)
-                self._cb(self.explicit_message(m_string))
+                self._cb(parsed_message)
 
     def stop(self):
         """Ask the thread to stop and close the serial port."""
