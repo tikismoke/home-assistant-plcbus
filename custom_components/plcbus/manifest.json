@@ -2,6 +2,7 @@
     "domain": "plcbus",
     "name": "PLCBus",
     "codeowners": ["@tikismoke", "@demonio669"],
+    "categories": ["plugs_switches"],
     "config_flow": true,
     "dependencies": [],
     "documentation": "https://github.com/demonio669/home-assistant-plcbus",
