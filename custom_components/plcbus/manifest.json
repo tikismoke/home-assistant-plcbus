@@ -2,13 +2,13 @@
     "domain": "plcbus",
     "name": "PLCBus",
     "config_flow": true,
-    "documentation": "https://github.com/demonio669/home-assistant-plcbus",
-    "issue_tracker": "https://github.com/demonio669/home-assistant-plcbus/issues",
-    "dependencies": [],
-    "version": "1.1.0",
     "codeowners": ["@tikismoke", "@demonio669"],
+    "dependencies": [],
+    "documentation": "https://github.com/demonio669/home-assistant-plcbus",
     "iot_class": "local_polling",
+    "issue_tracker": "https://github.com/demonio669/home-assistant-plcbus/issues",
     "requirements": [
       "pyudev==0.24.1"
-    ]
+    ],
+    "version": "1.1.0"
   }
