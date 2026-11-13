@@ -1,8 +1,8 @@
 {
     "domain": "plcbus",
     "name": "PLCBus",
-    "config_flow": true,
     "codeowners": ["@tikismoke", "@demonio669"],
+    "config_flow": true,
     "dependencies": [],
     "documentation": "https://github.com/demonio669/home-assistant-plcbus",
     "iot_class": "local_polling",
