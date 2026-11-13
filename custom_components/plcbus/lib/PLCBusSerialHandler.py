@@ -34,17 +34,23 @@ Implements
 @organization: Domogik
 """
 
-#import mutex
-import datetime
 import logging
 import queue
-import sys
 import threading
 import time
 from binascii import hexlify
 
 import serial
+
 _LOGGER = logging.getLogger(__name__)
+
+
+def _to_hex_str(message):
+    """Return a Python 3 hex string from serial bytes or an existing hex str."""
+    if isinstance(message, bytes):
+        return hexlify(message).decode("ascii")
+    return message
+
 
 class serialHandler(threading.Thread):
     """
@@ -55,112 +61,110 @@ class serialHandler(threading.Thread):
     """
 
     def __init__(self, serial_port_no, command_cb, message_cb):
-        #_LOGGER.debug("__init__")
-        """ Initialize threaded PLCBUS manager
-        Will handle communication to and from PLCBus 
-        @param serial_port_no : Number or path of the serial port 
-        @param command_cb: callback called when a command has been succesfully sent
-        @param message_cb: called when a message is received from somewhere else on the network
-        For these 2 callbacks, the param is sent as an array
-        """
-        threading.Thread.__init__(self)
-        #invoke constructor of parent class
-        self._ack = threading.Event() #Shared list between reader and writer
+        """Initialize threaded PLCBUS manager."""
+        threading.Thread.__init__(self, daemon=True)
+        self._ack = threading.Event()
         self._need_answer = ["1D", "1C"]
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._has_message_to_send = threading.Event()
-        #serial port init
+        self._serial = None
         try:
-
-            self.__myser = serial.Serial(serial_port_no, 9600, timeout = 0.4,
-                    parity = serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
-                    xonxoff = 0) #, rtscts=1)
+            self._serial = serial.Serial(
+                serial_port_no,
+                9600,
+                timeout=0.4,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                xonxoff=0,
+            )
         except serial.SerialException:
             _LOGGER.error("can not open serial port %s", serial_port_no)
-            #TODO notify HASS of error
-#        self._want_lock = threading.Event()
-#        self._mutex = mutex.mutex()
+            raise
         self._send_queue = queue.Queue()
+        self._answer_queue = queue.Queue()
         self._cb = command_cb
         self._msg_cb = message_cb
         self._waited_ack = None
-        #self._reader = self.__Reader(self.__myser, self._want_lock, self._mutex, self._ack, message_cb)
-        #self._reader.start()
-        #self._writer = self.__Writer(self.__myser, self._want_lock, self._mutex, self._ack, command_cb, self._reader)
-        #self._writer.start()
-
 
     def explicit_message(self, message):
-        #_LOGGER.debug("explicit_message")
-        """ Parse a frame 
-        """
+        """Parse a frame."""
+        message = _to_hex_str(message)
+        if not isinstance(message, str) or len(message) < 16 or len(message) % 2:
+            raise ValueError("PLCBUS frame is truncated")
+        if any(char not in "0123456789abcdefABCDEF" for char in message):
+            raise ValueError("PLCBUS frame contains non-hexadecimal data")
+        if message[:2].lower() != "02":
+            raise ValueError("PLCBUS frame has an invalid start byte")
+
         cmdplcbus = {
-        '00': 'ALL_UNITS_OFF',
-        '01': 'ALL_LIGHTS_ON',
-        '22': 'ON', #ON and ask to send ACK (instead of '02')
-        '23': 'OFF', #OFF and send ACK
-        '24': 'DIM',
-        '25': 'BRIGHT',
-        '06': 'ALL_LIGHTS_OFF',
-        '07': 'ALL_USER_LTS_ON',
-        '08': 'ALL_USER_UNIT_OFF',
-        '09': 'ALL_USER_LIGHT_OFF',
-        '2a': 'BLINK',
-        '2b': 'FADE_STOP',
-        '2c': 'PRESET_DIM',
-        '0d': 'STATUS_ON',
-        '0e': 'STATUS_OFF',
-        '0f': 'STATUS_REQUEST',
-        '30': 'REC_MASTER_ADD_SETUP',
-        '31': 'TRA_MASTER_ADD_SETUP',
-        '12': 'SCENE_ADR_SETUP',
-        '13': 'SCENE_ADR_ERASE',
-        '34': 'ALL_SCENES_ADD_ERASE',
-        '15': 'FOR FUTURE',
-        '16': 'FOR FUTURE',
-        '17': 'FOR FUTURE',
-        '18': 'GET_SIGNAL_STRENGTH',
-        '19': 'GET_NOISE_STRENGTH',
-        '1a': 'REPORT_SIGNAL_STREN',
-        '1b': 'REPORT_NOISE_STREN',
-        '1c': 'GET_ALL_ID_PULSE',
-        '1d': 'GET_ALL_ON_ID_PULSE',
-        '1e': 'REPORT_ALL_ID_PULSE',
-        '1f': 'REPORT_ONLY_ON_PULSE'}
+            "00": "ALL_UNITS_OFF",
+            "01": "ALL_LIGHTS_ON",
+            "22": "ON",
+            "23": "OFF",
+            "24": "DIM",
+            "25": "BRIGHT",
+            "06": "ALL_LIGHTS_OFF",
+            "07": "ALL_USER_LTS_ON",
+            "08": "ALL_USER_UNIT_OFF",
+            "09": "ALL_USER_LIGHT_OFF",
+            "2a": "BLINK",
+            "2b": "FADE_STOP",
+            "2c": "PRESET_DIM",
+            "0d": "STATUS_ON",
+            "0e": "STATUS_OFF",
+            "0f": "STATUS_REQUEST",
+            "30": "REC_MASTER_ADD_SETUP",
+            "31": "TRA_MASTER_ADD_SETUP",
+            "12": "SCENE_ADR_SETUP",
+            "13": "SCENE_ADR_ERASE",
+            "34": "ALL_SCENES_ADD_ERASE",
+            "15": "FOR FUTURE",
+            "16": "FOR FUTURE",
+            "17": "FOR FUTURE",
+            "18": "GET_SIGNAL_STRENGTH",
+            "19": "GET_NOISE_STRENGTH",
+            "1a": "REPORT_SIGNAL_STREN",
+            "1b": "REPORT_NOISE_STREN",
+            "1c": "GET_ALL_ID_PULSE",
+            "1d": "GET_ALL_ON_ID_PULSE",
+            "1e": "REPORT_ALL_ID_PULSE",
+            "1f": "REPORT_ONLY_ON_PULSE",
+        }
         home = "ABCDEFGHIJKLMNOP"
         r = {}
         r["start_bit"] = message[0:2]
-        r["data_length"] = int(message[2:4])
-        int_length = int(message[2:4])*2
-        r["data"] = message[4:4+int_length]
+        r["data_length"] = int(message[2:4], 16)
+        if r["data_length"] < 5:
+            raise ValueError("PLCBUS frame does not contain all required fields")
+        int_length = r["data_length"] * 2
+        data_end = 4 + int_length
+        if len(message) < data_end + 2:
+            raise ValueError("PLCBUS frame is shorter than its declared data length")
+        r["data"] = message[4:data_end]
         r["d_user_code"] = r["data"][0:2]
-        r["d_home_unit"] = "%s%s" % (home[int(r["data"][2:3], 16)],int(r["data"][3:4], 16)+1)
-        r["d_command"] = cmdplcbus[r["data"][4:6]]
-        r["d_data1"] = int(r["data"][6:8],16)
-        r["d_data2"] = int(r["data"][8:10],16)
+        house_index = int(r["data"][2:3], 16)
+        if house_index >= len(home):
+            raise ValueError("PLCBUS frame contains an invalid house code")
+        r["d_home_unit"] = "%s%s" % (
+            home[house_index],
+            int(r["data"][3:4], 16) + 1,
+        )
+        command_key = r["data"][4:6].lower()
+        r["d_command"] = cmdplcbus.get(command_key, command_key)
+        r["d_data1"] = int(r["data"][6:8], 16)
+        r["d_data2"] = int(r["data"][8:10], 16)
         if r["data_length"] == 6:
             r["rx_tw_switch"] = r["data"][11:]
         r["end_bit"] = message[-2:]
         return r
 
     def _send(self, plcbus_frame):
-        #_LOGGER.debug("_send")
-        #Resend if proper ACK not received
-        #check for ack pulse
+        """Send a frame and wait for ACK when required."""
         explicit_frame = self.explicit_message(plcbus_frame)
-        if (int(plcbus_frame[8:10], 16) >> 5) & 1: #ACK pulse bit set to 1
-            #The ACK message take only 10ms + 10ms to bring it back to the computer.
-            #Anyway, it seems that the mean time before reading the ack is about 
-            #0.6s . Because there is another sleep in the loop, this sleep is only 0.3s
-            # time.sleep(0.3)
+        if (int(plcbus_frame[8:10], 16) >> 5) & 1:
             ACK_received = 0
-            # like a timer, does not wait for more than 2seconds for example
             time1 = time.time()
-            while not self._stop.isSet():
-                #The ack message is sent immediately after the message has been received 
-                #and transmission time is 20mS (10ms for message propagation to adapter,
-                #and 10ms between adapter and computer
-                #We sleep 20ms between each check
+            while not self._stop_event.is_set():
                 self._needs_ack_for(plcbus_frame)
                 self._basic_write(plcbus_frame)
                 time.sleep(0.6)
@@ -172,21 +176,25 @@ class serialHandler(threading.Thread):
                         break
                 _LOGGER.debug("time after wait : %s" % time.time())
                 if self._ack.isSet():
-                    _LOGGER.debug("%s : Ack set",plcbus_frame)
+                    _LOGGER.debug("%s : Ack set", plcbus_frame)
                     ACK_received = 1
                     self._ack.clear()
                     self._cb(self.explicit_message(plcbus_frame))
                     break
 
-                if (ACK_received == 1):
+                if ACK_received == 1:
                     break
-                elif(time1 + 3.1 < time.time()):
-                    _LOGGER.error("WARN : Message %s sent, but ack never received", plcbus_frame)
-                    break #2s
-        elif explicit_frame["d_command"] not in ['GET_ALL_ID_PULSE', 'GET_ALL_ON_ID_PULSE']:
-            #No ACK asked, we consider that the message has been correctly sent
+                elif time1 + 3.1 < time.time():
+                    _LOGGER.error(
+                        "WARN : Message %s sent, but ack never received", plcbus_frame
+                    )
+                    break
+        elif explicit_frame["d_command"] not in [
+            "GET_ALL_ID_PULSE",
+            "GET_ALL_ON_ID_PULSE",
+        ]:
             self._basic_write(plcbus_frame)
-            _LOGGER.debug("explicit_frame= %s",explicit_frame)
+            _LOGGER.debug("explicit_frame= %s", explicit_frame)
             self._cb(explicit_frame)
         else:
             self._basic_write(plcbus_frame)
@@ -194,153 +202,136 @@ class serialHandler(threading.Thread):
     def add_to_send_queue(self, trame):
         _LOGGER.debug("add_to_send_queue : %s", trame)
         self._send_queue.put(trame)
-    
-    def get_from_answer_queue(self):
-        self.receive()
-        _LOGGER.debug("response= %s" , response)
- #       return response
 
+    def get_from_answer_queue(self, timeout=2):
+        """Return the next answer frame, or None if none arrives."""
+        try:
+            return self._answer_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
 
     def receive(self):
-        #Avoid to wait if there is nothing to read
-#        try:
-        if self._stop.isSet():
+        """Read available frames from the adapter."""
+        if self._stop_event.is_set() or self._serial is None:
             return
-        if self.__myser.inWaiting() < 9:
+        waiting = self._serial.in_waiting if hasattr(self._serial, "in_waiting") else self._serial.inWaiting()
+        if waiting < 9:
             time.sleep(0.4)
             return
-        while self.__myser.inWaiting() >= 9:
-            message = self.__myser.read(9) #wait for max 400ms if nothing to read
-#        except IOError:
-#            pass
-            if(message):
-                m_string = hexlify(message)
-                #self.explicit_message(m_string)
-                #if message is likely to be an answer, put it in the right queue
-                #First we check that the message is not from the adapter itself
-                #And simply ignore it if it's the case 
-                _LOGGER.debug("str : %s", m_string)
-                if self._is_from_myself(m_string):
-                    _LOGGER.debug("from myself")
-                    return
-                if self._is_answer(m_string):
-                    _LOGGER.debug("ANSWER : %s", m_string)
-                    self._cb(self.explicit_message(m_string))
-                elif self._is_ack(m_string):
-                    if self._waited_ack is not None:
-                        _LOGGER.debug("IS ACK : %s, waited ack : %s", m_string.decode('utf-8'), self._waited_ack)
-                        if (self._waited_ack != None) and self._is_ack_for_message(m_string.decode('utf-8'), self._waited_ack):
-                            self._waited_ack = None
-                            self._ack.set()
-                    else:
-                        _LOGGER.debug("Ack not attend send from another programs?")
-                        self._cb(self.explicit_message(m_string.decode('utf-8')))
+        while True:
+            waiting = (
+                self._serial.in_waiting
+                if hasattr(self._serial, "in_waiting")
+                else self._serial.inWaiting()
+            )
+            if waiting < 9:
+                break
+            try:
+                message = self._serial.read(9)
+            except (OSError, serial.SerialException, TypeError):
+                return
+            if not message:
+                continue
+            m_string = _to_hex_str(message)
+            _LOGGER.debug("str : %s", m_string)
+            try:
+                parsed_message = self.explicit_message(m_string)
+            except ValueError as err:
+                _LOGGER.warning("Ignoring malformed PLCBUS frame %s: %s", m_string, err)
+                continue
+            if self._is_from_myself(m_string):
+                _LOGGER.debug("from myself")
+                continue
+            if self._is_answer(m_string):
+                _LOGGER.debug("ANSWER : %s", m_string)
+                self._answer_queue.put(m_string)
+                self._cb(parsed_message)
+            elif self._is_ack(m_string):
+                if self._waited_ack is not None:
+                    _LOGGER.debug(
+                        "IS ACK : %s, waited ack : %s", m_string, self._waited_ack
+                    )
+                    if self._is_ack_for_message(m_string, self._waited_ack):
+                        self._waited_ack = None
+                        self._ack.set()
                 else:
-                    _LOGGER.debug("QUEUE : %s", m_string.decode('utf-8'))
-                    self._cb(self.explicit_message(m_string.decode('utf-8')))
+                    _LOGGER.debug("Ack not attend send from another programs?")
+                    self._cb(parsed_message)
+            else:
+                _LOGGER.debug("QUEUE : %s", m_string)
+                self._cb(parsed_message)
 
     def stop(self):
-        #_LOGGER.debug ("stop")
-        """ Ask the thread to stop, 
-        will only set a threading.Event instance
-        and close serial port
-        """
-        self._stop.set()
-        self.__myser.close()
+        """Ask the thread to stop and close the serial port."""
+        self._stop_event.set()
+        if self._serial is not None:
+            try:
+                self._serial.close()
+            except OSError:
+                pass
 
     def run(self):
-        #_LOGGER.debug ("run")
-        #serial handler main thread
-#        self._mutex.testandset()
-        while not self._stop.isSet():
-            #The Event _has_message_to_send is only used to optimize
-            #The test isSet is much faster than the empty() test 
-            #If _has_message_to_send is locked, then there is at least 1 lock(function)
-            #in the queue, so the unlock() will just do this call, 
-            #not really unlock the mutex.
+        """Serial handler main thread."""
+        while not self._stop_event.is_set():
             try:
                 item = self._send_queue.get_nowait()
             except queue.Empty:
                 pass
             else:
-                self._send(item)
-#                self._mutex.unlock()
-#                self._mutex.testandset()
-            #_LOGGER.debug("receiving")
-            self.receive()
-            time.sleep(1)
+                try:
+                    self._send(item)
+                except (OSError, serial.SerialException) as err:
+                    if not self._stop_event.is_set():
+                        _LOGGER.error("PLCBUS serial send failed: %s", err)
+                    self.stop()
+                    return
+            try:
+                self.receive()
+            except (OSError, serial.SerialException) as err:
+                if not self._stop_event.is_set():
+                    _LOGGER.error("PLCBUS serial receive failed: %s", err)
+                self.stop()
+                return
+            self._stop_event.wait(1)
 
     def _needs_ack_for(self, frame):
-        """ Called by the Writer to let Reader knows that a ACK is waited
-        it will set the internal _waited_ack until the ack is received 
-        @param frame : the plcbus frame
-        """
-        #_LOGGER.debug("_needs_ack_for")
+        """Let the reader know that an ACK is waited."""
         self._waited_ack = frame
 
     def _is_ack(self, message):
-        """ Check if a message is an ack 
-            @param message : message to check
-        """
-        #_LOGGER.debug("_is_ack")
+        """Check if a message is an ack."""
+        message = _to_hex_str(message)
         return int(message[14:16], 16) & 0x20
 
     def _is_from_myself(self, message):
-        """ Check if a message is sent by the adapter itself
-            @param message : message to check
-        """
-        #_LOGGER.debug("is_from_myself")
+        """Check if a message is sent by the adapter itself."""
+        message = _to_hex_str(message)
         return int(message[14:16], 16) & 0x10
 
     def _is_ack_for_message(self, m1, m2):
-        #_LOGGER.debug("_is_ack_for_message")
-        #check the ACK bit
+        m1 = _to_hex_str(m1)
+        m2 = _to_hex_str(m2)
         _LOGGER.debug("ACK check  %s %s ", m1, m2)
-        #check house code and user code in hexa string format like '45E0'
-        if(m1[4:8].upper() == m2[4:8].upper()) and (m1[8:10].upper() == m2[8:10].upper()): #Compare user code + home unit
+        if (m1[4:8].upper() == m2[4:8].upper()) and (
+            m1[8:10].upper() == m2[8:10].upper()
+        ):
             _LOGGER.debug("housecode and usercode OK")
-            return (int(m1[14:16], 16) & 0x20) #test only one bit
+            return int(m1[14:16], 16) & 0x20
         return False
 
     def _is_answer(self, message):
-        #_LOGGER.debug("is_answer")
-        # if command is in answer required list (not ACK required, it's
-        # different)
-        # if R_ID_SW bit set
-        # maybe pass this list to the _init_ of this handler to make it
-        # compatible with other protocols
-        if((int(message[14:15], 16) >> 2 & 1) and message[8:10].upper() in
-                ["1C","1D"]):
+        message = _to_hex_str(message).upper()
+        if (int(message[14:15], 16) >> 2 & 1) and message[8:10] in ["1C", "1D"]:
             return True
         return False
 
     def _basic_write(self, frame):
-        """Write a frame on serial port
-        This method should only be called as mutex.lock() parameter
-        @param frame : The frame to write 
-        """
-        #_LOGGER.debug("_basic_write")
+        """Write a frame on serial port."""
+        if self._serial is None:
+            _LOGGER.error("Serial port is not open")
+            return
         _LOGGER.debug("SEND : %s", frame)
-        self.__myser.write(bytes.fromhex(frame))
-
-#a = serialHandler()
-#a.start()
-#pas sur du contenu des trames suivantes
-#trame = '0205000000000003'
-#trame = '0205000102000003'#A2 on
-#trame = '0205000002000003'#A1 on
-#trame = '0205450122000003' #A2 on ack asked
-#trame = '020545E302000003' #B1 on
-#a.add_to_send_queue(trame)
-
-#a.get_from_receive_queue() #attention, bloquant
-
-
-#je n'ai pas gere comment quitter
-#a.join()
-
-
-
-#trame = '0205FF0123000003' #A2 off ack asked
-#trame = '020500000F000003' #Status checking
-#trame = '0205000018000003' #get signal strength
+        try:
+            self._serial.write(bytes.fromhex(frame))
+        except (OSError, serial.SerialException, TypeError, ValueError) as err:
+            _LOGGER.error("Failed to write PLCBUS frame %s: %s", frame, err)

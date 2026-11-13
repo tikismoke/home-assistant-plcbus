@@ -16,6 +16,6 @@ keywords:
   - home-assistant
   - custom-component
   - python
-license: MIT License
+license: GPL-3.0-or-later
 name: switch.plcbus
 type: component

@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure PLCBus",
+        "description": "Configure one PLCBUS serial adapter. Leave the device blank to detect a Prolific PL2303 adapter. Leave units blank to discover devices in houses A-K.",
+        "data": {
+          "device": "Serial device",
+          "user_code": "User code",
+          "unit": "Units (comma separated)"
+        },
+        "data_description": {
+          "device": "For example /dev/serial/by-id/... or /dev/ttyUSB0.",
+          "user_code": "Exactly two hexadecimal digits, from 00 to FF.",
+          "unit": "For example A1,A2,B6. Houses A-P and units 1-16."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure PLCBus",
+        "description": "Changing these settings reloads the integration. Remove any legacy PLCBUS YAML configuration after import.",
+        "data": {
+          "device": "Serial device",
+          "user_code": "User code",
+          "unit": "Units (comma separated)"
+        },
+        "data_description": {
+          "device": "For example /dev/serial/by-id/... or /dev/ttyUSB0.",
+          "user_code": "Exactly two hexadecimal digits, from 00 to FF.",
+          "unit": "For example A1,A2,B6. Leave blank for automatic discovery."
+        }
+      }
+    },
+    "error": {
+      "invalid_config": "Enter a two-digit hexadecimal user code and valid units (A-P, 1-16). If no adapter is detected, specify its serial device path.",
+      "cannot_connect": "Unable to detect the serial adapter. Check the device path and permissions."
+    },
+    "abort": {
+      "single_instance_allowed": "Only one PLCBus connection can be configured. Reconfigure the existing integration.",
+      "already_configured": "PLCBus is already configured.",
+      "invalid_config": "The YAML configuration is invalid or no serial adapter was detected.",
+      "reconfigure_successful": "PLCBus has been reconfigured."
+    }
+  }
+}
