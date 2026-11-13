@@ -1,14 +1,13 @@
-[![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://www.hacs.xyz/docs/faq/custom_repositories/)
 [![Latest release](https://img.shields.io/github/v/release/demonio669/home-assistant-plcbus)](https://github.com/demonio669/home-assistant-plcbus/releases)
 
-## Installation with HACS
+## Installation from Home Assistant Marketplace
 
-This repository is not part of the HACS default store. Add it as a custom repository:
+Add this repository as a custom integration:
 
-1. In Home Assistant, open **HACS > Integrations**.
+1. In Home Assistant, open **HACS > Integrations** (the current custom integration catalog).
 2. Open the menu and choose **Custom repositories**.
 3. Add `https://github.com/demonio669/home-assistant-plcbus` and select **Integration** as the category.
-4. Install **PLCBus** from HACS and restart Home Assistant.
+4. Install **PLCBus** and restart Home Assistant.
 
 Alternatively, copy `custom_components/plcbus` into the `custom_components` directory of your Home Assistant configuration and restart.
 
